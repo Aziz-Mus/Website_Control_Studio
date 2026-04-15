@@ -1,0 +1,74 @@
+/* Color picker canvas styles */
+.color-picker-canvas {
+  cursor: crosshair;
+  border-radius: 6px;
+  border: 1px solid #E5E7EB;
+}
+
+/* Slider overrides for red theme */
+.red-slider [data-orientation="horizontal"] > span:first-child > span {
+  background-color: #DA2C38;
+}
+
+.red-slider [role="slider"] {
+  border-color: #DA2C38;
+}
+
+/* Switch red override */
+.red-switch[data-state="checked"] {
+  background-color: #DA2C38;
+}
+
+/* Active nav link */
+.nav-link-active {
+  color: #DA2C38;
+  border-bottom: 2px solid #DA2C38;
+  padding-bottom: 2px;
+}
+
+/* Preset color swatch */
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.color-swatch.selected {
+  border-color: #1C2025;
+  box-shadow: 0 0 0 1px #fff, 0 0 0 3px #1C2025;
+}
+
+/* Module card animations */
+.module-card {
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.module-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.module-card.active {
+  border-color: #DA2C38;
+}
+
+.module-card.selected {
+  border-color: #DA2C38;
+  box-shadow: 0 0 0 2px rgba(218, 44, 56, 0.2);
+}
+
+/* Warning pulse */
+@keyframes warning-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.warning-indicator {
+  animation: warning-pulse 2s ease-in-out infinite;
+}

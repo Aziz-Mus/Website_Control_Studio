@@ -1,0 +1,32 @@
+{
+  "rooms": [
+    {
+      "roomId": "rm01",
+      "roomName": "Lampu Besar",
+      "espIpAddress": "192.168.1.161",
+      "relays": [
+        {
+          "relayId": "rl01",
+          "deviceName": "Control 1",
+          "channelCode": "1"
+        },
+        {
+          "relayId": "rl02",
+          "deviceName": "Control 2",
+          "channelCode": "2"
+        },
+        {
+          "relayId": "rl03",
+          "deviceName": "Control 3",
+          "channelCode": "3"
+        },
+        {
+          "relayId": "rl04",
+          "deviceName": "Control 4",
+          "channelCode": "4"
+        }
+      ],
+      "onAirExitConnected": false
+    }
+  ]
+}
