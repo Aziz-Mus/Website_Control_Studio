@@ -15,8 +15,14 @@ export default function NeonGrid({ devices, selectedIds, onToggleSelect, onDelet
       {devices.map((device) => {
         const isSelected = selectedIds.includes(device.kode);
         const st = deviceStatuses[device.kode] || "idle";
-        const bc = st === "on" ? "border-[#DA2C38]" : st === "failed" ? "border-[#F59E0B]" : isSelected ? "border-[#DA2C38]" : "border-[#E5E7EB]";
+
+        // Bug Fix: Border ONLY follows selection state, not device status.
+        // This allows unselecting a card back to gray even if status is ON or FAILED.
+        const bc = isSelected ? "border-[#DA2C38]" : "border-[#E5E7EB]";
+
+        // Background still follows status for visual feedback inside the card
         const bg = st === "on" ? "bg-red-50" : st === "failed" ? "bg-yellow-50" : isSelected ? "bg-red-50" : "bg-gray-50";
+
         return (
           <div key={device.kode} data-testid={`neon-module-${device.kode}`}
             className={`module-card relative bg-white border-2 rounded-md p-3 cursor-pointer transition-all ${bc}`}

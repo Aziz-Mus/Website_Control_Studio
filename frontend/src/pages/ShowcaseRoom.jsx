@@ -9,15 +9,26 @@ import MasterStatus from "@/components/shared/MasterStatus";
 import AddLightDialog from "@/components/shared/AddLightDialog";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const STORAGE_KEY = "showcase_device_statuses";
+const SELECTED_KEY = "showcase_selected_ids";
+
+// Helper to load from localStorage safely
+function loadStorage(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
 
 export default function ShowcaseRoom() {
   const [devices, setDevices] = useState([]);
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(() => loadStorage(SELECTED_KEY, []));
   const [brightness, setBrightness] = useState(255);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [deviceStatuses, setDeviceStatuses] = useState({});
+  const [deviceStatuses, setDeviceStatuses] = useState(() => loadStorage(STORAGE_KEY, {}));
+
+  // Persist statuses to localStorage whenever they change
+  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
+  useEffect(() => { localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedIds)); }, [selectedIds]);
 
   const fetchDevices = useCallback(async () => {
     try { const res = await axios.get(`${API}/showcase/devices`); setDevices(res.data.devices || []); } catch (e) { console.error(e); }
@@ -31,7 +42,13 @@ export default function ShowcaseRoom() {
     try { await axios.put(`${API}/showcase/devices/${kode}`, data); toast.success("Diupdate"); fetchDevices(); } catch (e) { toast.error("Gagal"); }
   };
   const handleDelete = async (kode) => {
-    try { await axios.delete(`${API}/showcase/devices/${kode}`); toast.success("Dihapus"); setSelectedIds(p => p.filter(id => id !== kode)); setDeviceStatuses(p => { const n={...p}; delete n[kode]; return n; }); fetchDevices(); } catch (e) { toast.error("Gagal"); }
+    try {
+      await axios.delete(`${API}/showcase/devices/${kode}`);
+      toast.success("Dihapus");
+      setSelectedIds(p => p.filter(id => id !== kode));
+      setDeviceStatuses(p => { const n = { ...p }; delete n[kode]; return n; });
+      fetchDevices();
+    } catch (e) { toast.error("Gagal"); }
   };
   const handleEdit = (device) => { setEditingDevice(device); setDialogOpen(true); };
   const openAdd = () => { setEditingDevice(null); setDialogOpen(true); };
@@ -39,7 +56,19 @@ export default function ShowcaseRoom() {
   const handleSelectAll = () => { setSelectedIds(selectedIds.length === devices.length ? [] : devices.map(d => d.kode)); };
 
   const updateStatusesFromResponse = (report, action) => {
-    const ns = {}; report.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; }); setDeviceStatuses(p => ({ ...p, ...ns }));
+    const ns = {};
+    report.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; });
+    setDeviceStatuses(p => ({ ...p, ...ns }));
+    // Toast per partial failure
+    const failedCount = report.filter(d => d.status !== "success").length;
+    const successCount = report.filter(d => d.status === "success").length;
+    if (failedCount > 0 && successCount > 0) {
+      toast.warning(`${successCount} berhasil, ${failedCount} gagal`);
+    } else if (failedCount > 0) {
+      toast.error(`${failedCount} lampu gagal`);
+    } else {
+      toast.success("Semua lampu berhasil");
+    }
   };
 
   const handleApplyColor = async ({ rgb, brightness: br }) => {
@@ -49,25 +78,44 @@ export default function ShowcaseRoom() {
     try {
       if (selectedIds.length > 0 && selectedIds.length < devices.length) {
         const results = await Promise.allSettled(selectedIds.map(kode => axios.post(`${API}/showcase/lampu`, { ...payload, KodeLampu: kode })));
-        const ns = {}; results.forEach((r, i) => { ns[selectedIds[i]] = r.status === "fulfilled" && r.value.data.status === "success" ? "on" : "failed"; }); setDeviceStatuses(p => ({ ...p, ...ns }));
-        toast.success(`Diterapkan ke ${selectedIds.length} lampu`);
+        const ns = {};
+        results.forEach((r, i) => { ns[selectedIds[i]] = r.status === "fulfilled" && r.value.data.status === "success" ? "on" : "failed"; });
+        setDeviceStatuses(p => ({ ...p, ...ns }));
+        const fc = Object.values(ns).filter(s => s === "failed").length;
+        const sc = Object.values(ns).filter(s => s === "on").length;
+        if (fc > 0 && sc > 0) toast.warning(`${sc} berhasil, ${fc} gagal`);
+        else if (fc > 0) toast.error(`${fc} lampu gagal`);
+        else toast.success(`Diterapkan ke ${selectedIds.length} lampu`);
       } else {
         const res = await axios.post(`${API}/showcase/lampu`, payload);
         if (res.data.devices) updateStatusesFromResponse(res.data.devices, "on");
-        toast.success("Diterapkan ke semua lampu");
+        else toast.success("Diterapkan ke semua lampu");
       }
-    } catch (e) { toast.error("Gagal"); }
+    } catch (e) { toast.error("Gagal menghubungi server"); }
     setLoading(false);
   };
 
   const handleActivateAll = async () => {
     if (!devices.length) return; setLoading(true);
-    try { const res = await axios.post(`${API}/showcase/lampu`, { Warna: { Red: 255, Green: 255, Blue: 255 }, Kecerahan: brightness }); if (res.data.devices) updateStatusesFromResponse(res.data.devices, "on"); toast.success("Semua lampu dinyalakan"); } catch (e) { toast.error("Gagal"); }
+    try {
+      const res = await axios.post(`${API}/showcase/lampu`, { Warna: { Red: 255, Green: 255, Blue: 255 }, Kecerahan: brightness });
+      if (res.data.devices) updateStatusesFromResponse(res.data.devices, "on");
+      else toast.success("Semua lampu dinyalakan");
+    } catch (e) { toast.error("Gagal"); }
     setLoading(false);
   };
+
   const handleDeactivateAll = async () => {
     if (!devices.length) return; setLoading(true);
-    try { const res = await axios.post(`${API}/showcase/turn-off`); if (res.data.devices) updateStatusesFromResponse(res.data.devices, "off"); else { const ao = {}; devices.forEach(d => { ao[d.kode] = "off"; }); setDeviceStatuses(p => ({ ...p, ...ao })); } toast.success("Semua lampu dimatikan"); } catch (e) { toast.error("Gagal"); }
+    try {
+      const res = await axios.post(`${API}/showcase/turn-off`);
+      if (res.data.devices) updateStatusesFromResponse(res.data.devices, "off");
+      else {
+        const ao = {}; devices.forEach(d => { ao[d.kode] = "off"; });
+        setDeviceStatuses(p => ({ ...p, ...ao }));
+        toast.success("Semua lampu dimatikan");
+      }
+    } catch (e) { toast.error("Gagal"); }
     setLoading(false);
   };
 

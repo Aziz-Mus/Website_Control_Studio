@@ -41,6 +41,24 @@ function hsvToRgb(h, s, v) {
   return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
 }
 
+// Bug Fix: Added rgbToHsv conversion so preset selection syncs canvas picker position
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0, s = 0, v = max;
+  if (max !== 0) s = d / max;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+    if (h < 0) h += 1;
+  }
+  return { h, s, v };
+}
+
 export default function ChromaControl({ onApply, selectedCount = 0, brightness, onBrightnessChange }) {
   const [hex, setHex] = useState("#DA2C38");
   const [rgb, setRgb] = useState({ r: 218, g: 44, b: 56 });
@@ -140,6 +158,10 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
     if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
       const { r, g, b } = hexToRgb(val);
       setRgb({ r, g, b });
+      // Also sync canvas position when hex is typed manually
+      const { h, s, v } = rgbToHsv(r, g, b);
+      setHue(h);
+      setSatPos({ x: s, y: 1 - v });
     }
   };
 
@@ -150,10 +172,16 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
     setHex(rgbToHex(newRgb.r, newRgb.g, newRgb.b));
   };
 
+  // Bug Fix: handlePreset now ALSO updates hue and satPos so canvas picker
+  // position syncs with the selected preset color
   const handlePreset = (color) => {
     setHex(color);
     const { r, g, b } = hexToRgb(color);
     setRgb({ r, g, b });
+    // Convert to HSV and update canvas picker position & hue slider
+    const { h, s, v } = rgbToHsv(r, g, b);
+    setHue(h);
+    setSatPos({ x: s, y: 1 - v });
   };
 
   const handleApply = () => {

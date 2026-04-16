@@ -10,9 +10,15 @@ import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+function loadStorage(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+
 export default function StudioHeadlightsRoom() {
   const navigate = useNavigate();
   const { roomId } = useParams();
+  const STORAGE_KEY = `hl_relay_statuses_${roomId}`;
+
   const [room, setRoom] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRelay, setEditingRelay] = useState(null);
@@ -20,7 +26,11 @@ export default function StudioHeadlightsRoom() {
   const [channelCode, setChannelCode] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [relayStatuses, setRelayStatuses] = useState({});
+  // Load relay statuses from localStorage (set by StudioHeadlights switch or previous session)
+  const [relayStatuses, setRelayStatuses] = useState(() => loadStorage(STORAGE_KEY, {}));
+
+  // Persist relay statuses to localStorage
+  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(relayStatuses)); }, [relayStatuses, STORAGE_KEY]);
 
   const fetchRoom = useCallback(async () => {
     try { const res = await axios.get(`${API}/studio/headlights/rooms/${roomId}`); setRoom(res.data.room); }
@@ -50,7 +60,12 @@ export default function StudioHeadlightsRoom() {
   };
 
   const handleDelete = async (relayId) => {
-    try { await axios.delete(`${API}/studio/headlights/rooms/${roomId}/relays/${relayId}`); toast.success("Dihapus"); setRelayStatuses(p => { const n={...p}; delete n[relayId]; return n; }); fetchRoom(); }
+    try {
+      await axios.delete(`${API}/studio/headlights/rooms/${roomId}/relays/${relayId}`);
+      toast.success("Dihapus");
+      setRelayStatuses(p => { const n = { ...p }; delete n[relayId]; return n; });
+      fetchRoom();
+    }
     catch (e) { toast.error("Gagal"); }
   };
 
@@ -64,13 +79,16 @@ export default function StudioHeadlightsRoom() {
       const ns = {};
       res.data.rooms?.forEach(rm => rm.relays.forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; }));
       setRelayStatuses(p => ({ ...p, ...ns }));
+
       const fc = Object.values(ns).filter(s => s === "failed").length;
-      if (fc > 0) toast.error(`${fc} device gagal`); else toast.success("Berhasil");
+      const sc = Object.values(ns).filter(s => s !== "failed").length;
+      if (fc > 0 && sc > 0) toast.warning(`${sc} berhasil, ${fc} device gagal`);
+      else if (fc > 0) toast.error(`${fc} device gagal`);
+      else toast.success("Berhasil");
     } catch (e) { toast.error("Gagal"); }
     setLoading(false);
   };
 
-  // ACTIVATE ALL excludes On Air/Exit relay
   const handleActivateAll = () => { const normal = (room?.relays || []).filter(r => !r.isOnAirExit); controlRelays(normal, "on"); };
   const handleDeactivateAll = () => { const normal = (room?.relays || []).filter(r => !r.isOnAirExit); controlRelays(normal, "off"); };
 
@@ -146,6 +164,7 @@ export default function StudioHeadlightsRoom() {
             )}
           </div>
           <div className="lg:w-72 space-y-4">
+            {/* Master Light Status panel - syncs with switch from StudioHeadlights */}
             <div className="bg-white border border-[#E5E7EB] rounded-md p-4 space-y-3" data-testid="hl-master-status">
               <h3 className="text-xs uppercase tracking-wider text-[#637083] font-medium" style={{ fontFamily: 'Work Sans, sans-serif' }}>Master Light Status</h3>
               <div className={`border rounded-md p-4 flex items-center gap-3 ${ms === "all_active" || ms === "partially_active" ? "border-[#DA2C38]" : "border-[#E5E7EB]"}`}>

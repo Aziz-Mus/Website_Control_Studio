@@ -24,9 +24,15 @@
           "relayId": "rl04",
           "deviceName": "Control 4",
           "channelCode": "4"
+        },
+        {
+          "relayId": "rl_onair_exit",
+          "deviceName": "On Air / Exit Switch",
+          "channelCode": "switch",
+          "isOnAirExit": true
         }
       ],
-      "onAirExitConnected": false
+      "onAirExitConnected": true
     }
   ]
 }

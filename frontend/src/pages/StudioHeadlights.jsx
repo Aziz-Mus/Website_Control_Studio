@@ -10,6 +10,11 @@ import { toast } from "sonner";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const SWITCH_STORAGE_KEY = "hl_room_switch_states";
+
+function loadStorage(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
 
 export default function StudioHeadlights() {
   const navigate = useNavigate();
@@ -21,8 +26,11 @@ export default function StudioHeadlights() {
   const [connectSwitch, setConnectSwitch] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hasOnAirConnected, setHasOnAirConnected] = useState(false);
-  const [roomSwitchStates, setRoomSwitchStates] = useState({});
+  const [roomSwitchStates, setRoomSwitchStates] = useState(() => loadStorage(SWITCH_STORAGE_KEY, {}));
   const [roomSwitchLoading, setRoomSwitchLoading] = useState({});
+
+  // Persist switch states
+  useEffect(() => { localStorage.setItem(SWITCH_STORAGE_KEY, JSON.stringify(roomSwitchStates)); }, [roomSwitchStates]);
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -36,7 +44,15 @@ export default function StudioHeadlights() {
   useEffect(() => { fetchRooms(); }, [fetchRooms]);
 
   const openAdd = () => { setEditingRoom(null); setRoomName(""); setEspIp(""); setConnectSwitch(false); setDialogOpen(true); };
-  const openEdit = (room) => { setEditingRoom(room); setRoomName(room.roomName); setEspIp(room.espIpAddress); setDialogOpen(true); };
+
+  // Bug Fix: When editing, also sync connectSwitch state and show connect button if applicable
+  const openEdit = (room) => {
+    setEditingRoom(room);
+    setRoomName(room.roomName);
+    setEspIp(room.espIpAddress);
+    setConnectSwitch(room.onAirExitConnected || false);
+    setDialogOpen(true);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -44,7 +60,11 @@ export default function StudioHeadlights() {
     setSaving(true);
     try {
       if (editingRoom) {
-        await axios.put(`${API}/studio/headlights/rooms/${editingRoom.roomId}`, { roomName: roomName.trim(), espIpAddress: espIp.trim() });
+        await axios.put(`${API}/studio/headlights/rooms/${editingRoom.roomId}`, {
+          roomName: roomName.trim(),
+          espIpAddress: espIp.trim(),
+          connectOnAirExit: connectSwitch  // Bug Fix: pass connectOnAirExit on edit too
+        });
         toast.success("Room berhasil diupdate");
       } else {
         await axios.post(`${API}/studio/headlights/rooms`, { roomName: roomName.trim(), espIpAddress: espIp.trim(), connectOnAirExit: connectSwitch });
@@ -56,7 +76,12 @@ export default function StudioHeadlights() {
   };
 
   const handleDelete = async (roomId) => {
-    try { await axios.delete(`${API}/studio/headlights/rooms/${roomId}`); toast.success("Room dihapus"); fetchRooms(); }
+    try {
+      await axios.delete(`${API}/studio/headlights/rooms/${roomId}`);
+      toast.success("Room dihapus");
+      setRoomSwitchStates(p => { const n = { ...p }; delete n[roomId]; return n; });
+      fetchRooms();
+    }
     catch (e) { toast.error("Gagal menghapus"); }
   };
 
@@ -70,13 +95,31 @@ export default function StudioHeadlights() {
       const res = await axios.post(ep, payload);
       const sc = res.data.summary?.success || 0;
       const fc = res.data.summary?.failed || 0;
+      const total = res.data.summary?.total || normalRelays.length;
+
       if (sc > 0) {
         setRoomSwitchStates(p => ({ ...p, [room.roomId]: checked }));
-        toast.success(`${sc} device ${checked ? "dinyalakan" : "dimatikan"}`);
       }
-      if (fc > 0) {
+
+      // Sync device statuses to localStorage so room detail page picks them up
+      const relayResults = res.data.rooms?.[0]?.relays || [];
+      if (relayResults.length > 0) {
+        const action = checked ? "on" : "off";
+        const ns = {};
+        relayResults.forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; });
+        const storageKey = `hl_relay_statuses_${room.roomId}`;
+        const existing = loadStorage(storageKey, {});
+        localStorage.setItem(storageKey, JSON.stringify({ ...existing, ...ns }));
+      }
+
+      if (fc > 0 && sc > 0) {
+        setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
+        toast.warning(`${sc} berhasil, ${fc} device gagal`);
+      } else if (fc > 0 && sc === 0) {
         setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
         toast.error(`${fc} device gagal`);
+      } else {
+        toast.success(`${sc} device ${checked ? "dinyalakan" : "dimatikan"}`);
       }
     } catch (e) {
       setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
@@ -84,6 +127,13 @@ export default function StudioHeadlights() {
     }
     setRoomSwitchLoading(p => ({ ...p, [room.roomId]: false }));
   };
+
+  // Determine if we should show the On Air/Exit connect button in dialog
+  // Bug Fix: Show also when editing a room that is NOT yet connected,
+  // and no other room already has it connected
+  const canConnectOnAir = editingRoom
+    ? !editingRoom.onAirExitConnected && !rooms.some(r => r.onAirExitConnected && r.roomId !== editingRoom.roomId)
+    : !hasOnAirConnected;
 
   return (
     <div className="min-h-screen bg-[#F7F8F9]" data-testid="studio-headlights-page">
@@ -121,7 +171,8 @@ export default function StudioHeadlights() {
                     disabled={roomSwitchLoading[room.roomId] || (room.relays || []).filter(r => !r.isOnAirExit).length === 0}
                     className="data-[state=checked]:bg-[#DA2C38] scale-75"
                   />
-                </div>                <div className="flex flex-col items-center gap-2">
+                </div>
+                <div className="flex flex-col items-center gap-2">
                   <div className="p-2.5 rounded-md bg-red-50"><Lamp className="w-6 h-6 text-[#DA2C38]" strokeWidth={1.5} /></div>
                   <div className="text-center w-full">
                     <p className="text-[10px] uppercase tracking-wider text-[#637083]">{room.roomId}</p>
@@ -165,7 +216,8 @@ export default function StudioHeadlights() {
               <Label>ESP IP Address</Label>
               <Input data-testid="hl-room-ip-input" placeholder="192.168.1.5" value={espIp} onChange={(e) => setEspIp(e.target.value)} required />
             </div>
-            {!editingRoom && !hasOnAirConnected && (
+            {/* Bug Fix: Show connect button for both Add and Edit modes when applicable */}
+            {canConnectOnAir && (
               <div className="border border-[#E5E7EB] rounded-md p-3 space-y-2" data-testid="onair-exit-connect-section">
                 <Label className="text-xs text-[#637083]">Connect Switch On Air/Exit?</Label>
                 <Button type="button" size="sm" variant={connectSwitch ? "default" : "outline"}
@@ -174,6 +226,15 @@ export default function StudioHeadlights() {
                   <Radio className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
                   {connectSwitch ? "Connected - On Air/Exit akan terhubung" : "Klik untuk hubungkan On Air/Exit"}
                 </Button>
+              </div>
+            )}
+            {/* Show info if already connected */}
+            {editingRoom?.onAirExitConnected && (
+              <div className="border border-[#DA2C38] rounded-md p-3 bg-red-50">
+                <div className="flex items-center gap-2">
+                  <Radio className="w-4 h-4 text-[#DA2C38]" strokeWidth={2} />
+                  <span className="text-xs text-[#DA2C38] font-medium">Room ini sudah terhubung ke Switch On Air/Exit</span>
+                </div>
               </div>
             )}
             <DialogFooter>

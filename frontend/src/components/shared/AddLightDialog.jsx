@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,15 +11,26 @@ export default function AddLightDialog({ open, onOpenChange, onAdd, editingDevic
 
   const isEdit = !!editingDevice;
 
-  // Sync fields when editingDevice changes
-  useState(() => {
-    if (editingDevice) { setIp(editingDevice.ip || ""); setNama(editingDevice.nama || ""); }
-    else { setIp(""); setNama(""); }
+  // Sync fields when editingDevice changes (Bug Fix: was using useState instead of useEffect)
+  useEffect(() => {
+    if (editingDevice) {
+      setIp(editingDevice.ip || "");
+      setNama(editingDevice.nama || "");
+    } else {
+      setIp("");
+      setNama("");
+    }
   }, [editingDevice]);
 
+  // Also sync when dialog opens
   const handleOpen = (o) => {
-    if (o && editingDevice) { setIp(editingDevice.ip); setNama(editingDevice.nama); }
-    else if (o) { setIp(""); setNama(""); }
+    if (o && editingDevice) {
+      setIp(editingDevice.ip || "");
+      setNama(editingDevice.nama || "");
+    } else if (o) {
+      setIp("");
+      setNama("");
+    }
     onOpenChange(o);
   };
 

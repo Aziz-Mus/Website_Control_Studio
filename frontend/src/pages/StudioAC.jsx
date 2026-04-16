@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Snowflake, Trash2, Wifi, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +10,11 @@ import { toast } from "sonner";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const SWITCH_STORAGE_KEY = "ac_room_switch_states";
+
+function loadStorage(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
 
 export default function StudioAC() {
   const navigate = useNavigate();
@@ -18,6 +24,12 @@ export default function StudioAC() {
   const [roomName, setRoomName] = useState("");
   const [espIp, setEspIp] = useState("");
   const [saving, setSaving] = useState(false);
+  // New: master switch state per room
+  const [roomSwitchStates, setRoomSwitchStates] = useState(() => loadStorage(SWITCH_STORAGE_KEY, {}));
+  const [roomSwitchLoading, setRoomSwitchLoading] = useState({});
+
+  // Persist switch states to localStorage
+  useEffect(() => { localStorage.setItem(SWITCH_STORAGE_KEY, JSON.stringify(roomSwitchStates)); }, [roomSwitchStates]);
 
   const fetchRooms = useCallback(async () => { try { const res = await axios.get(`${API}/studio/ac/rooms`); setRooms(res.data.rooms || []); } catch (e) { console.error(e); } }, []);
   useEffect(() => { fetchRooms(); }, [fetchRooms]);
@@ -33,7 +45,58 @@ export default function StudioAC() {
       fetchRooms(); setDialogOpen(false);
     } catch (e) { toast.error("Gagal"); } setSaving(false);
   };
-  const handleDelete = async (roomId) => { try { await axios.delete(`${API}/studio/ac/rooms/${roomId}`); toast.success("Dihapus"); fetchRooms(); } catch (e) { toast.error("Gagal"); } };
+
+  const handleDelete = async (roomId) => {
+    try {
+      await axios.delete(`${API}/studio/ac/rooms/${roomId}`);
+      toast.success("Dihapus");
+      setRoomSwitchStates(p => { const n = { ...p }; delete n[roomId]; return n; });
+      fetchRooms();
+    } catch (e) { toast.error("Gagal"); }
+  };
+
+  // New: Master switch handler for AC rooms
+  const handleRoomSwitch = async (room, checked) => {
+    const relays = room.relays || [];
+    if (relays.length === 0) { toast.error("Tidak ada device di room ini"); return; }
+    setRoomSwitchLoading(p => ({ ...p, [room.roomId]: true }));
+    const ep = checked ? `${API}/studio/ac/control` : `${API}/studio/ac/deactivate`;
+    const payload = { rooms: [{ roomId: room.roomId, espIpAddress: room.espIpAddress, relays: relays.map(r => ({ relayId: r.relayId, channelCode: r.channelCode })) }] };
+    try {
+      const res = await axios.post(ep, payload);
+      const sc = res.data.summary?.success || 0;
+      const fc = res.data.summary?.failed || 0;
+
+      if (sc > 0) {
+        setRoomSwitchStates(p => ({ ...p, [room.roomId]: checked }));
+      }
+
+      // Sync relay statuses to localStorage so AC Room page picks them up
+      const relayResults = res.data.rooms?.[0]?.relays || [];
+      if (relayResults.length > 0) {
+        const action = checked ? "on" : "off";
+        const ns = {};
+        relayResults.forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; });
+        const storageKey = `ac_relay_statuses_${room.roomId}`;
+        const existing = loadStorage(storageKey, {});
+        localStorage.setItem(storageKey, JSON.stringify({ ...existing, ...ns }));
+      }
+
+      if (fc > 0 && sc > 0) {
+        setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
+        toast.warning(`${sc} berhasil, ${fc} AC gagal`);
+      } else if (fc > 0 && sc === 0) {
+        setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
+        toast.error(`${fc} AC gagal`);
+      } else {
+        toast.success(`${sc} AC ${checked ? "dinyalakan" : "dimatikan"}`);
+      }
+    } catch (e) {
+      setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
+      toast.error("Gagal mengendalikan");
+    }
+    setRoomSwitchLoading(p => ({ ...p, [room.roomId]: false }));
+  };
 
   return (
     <div className="min-h-screen bg-[#F7F8F9]" data-testid="studio-ac-page">
@@ -48,7 +111,19 @@ export default function StudioAC() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {rooms.map((room) => (
-              <div key={room.roomId} data-testid={`ac-room-${room.roomId}`} className="bg-white border border-[#E5E7EB] rounded-md p-4 hover:shadow-md hover:border-[#DA2C38] transition-all cursor-pointer group relative" onClick={() => navigate(`/studio/ac/${room.roomId}`)}>
+              <div key={room.roomId} data-testid={`ac-room-${room.roomId}`}
+                className="bg-white border border-[#E5E7EB] rounded-md p-4 hover:shadow-md hover:border-[#3B82F6] transition-all cursor-pointer group relative"
+                onClick={() => navigate(`/studio/ac/${room.roomId}`)}>
+                {/* New: Master switch top-left */}
+                <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
+                  <Switch
+                    data-testid={`ac-room-switch-${room.roomId}`}
+                    checked={roomSwitchStates[room.roomId] || false}
+                    onCheckedChange={(checked) => handleRoomSwitch(room, checked)}
+                    disabled={roomSwitchLoading[room.roomId] || (room.relays || []).length === 0}
+                    className="data-[state=checked]:bg-[#3B82F6] scale-75"
+                  />
+                </div>
                 <div className="flex flex-col items-center gap-2">
                   <div className="p-2.5 rounded-md bg-blue-50"><Snowflake className="w-6 h-6 text-[#3B82F6]" strokeWidth={1.5} /></div>
                   <div className="text-center w-full"><p className="text-[10px] uppercase tracking-wider text-[#637083]">{room.roomId}</p><p className="text-sm font-medium text-[#1C2025] truncate">{room.roomName}</p></div>

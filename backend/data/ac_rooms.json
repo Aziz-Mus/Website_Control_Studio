@@ -1,1 +1,17 @@
-{"rooms": []}
+{
+  "rooms": [
+    {
+      "roomId": "rm01",
+      "roomName": "Control AC",
+      "espIpAddress": "192.168.1.230",
+      "relays": [
+        {
+          "relayId": "rl01",
+          "deviceName": "192.168.1.230",
+          "channelCode": "AC",
+          "lastTemperature": 20
+        }
+      ]
+    }
+  ]
+}

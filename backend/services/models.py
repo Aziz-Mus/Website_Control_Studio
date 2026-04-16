@@ -34,6 +34,7 @@ class RoomCreate(BaseModel):
 class RoomUpdate(BaseModel):
     roomName: Optional[str] = None
     espIpAddress: Optional[str] = None
+    connectOnAirExit: Optional[bool] = None  # Added: allow editing On Air/Exit connection
 
 class RelayCreate(BaseModel):
     deviceName: str
@@ -54,6 +55,21 @@ class RoomControl(BaseModel):
 
 class BulkControlRequest(BaseModel):
     rooms: List[RoomControl]
+
+# --- AC Temperature Models ---
+class ACTemperatureRequest(BaseModel):
+    """Set temperature for a single AC device."""
+    roomId: str
+    espIpAddress: str
+    relayId: str
+    channelCode: str
+    temperature: int = Field(..., ge=16, le=30)
+
+class ACTemperatureAllRequest(BaseModel):
+    """Set temperature for ALL AC devices in a room."""
+    roomId: str
+    espIpAddress: str
+    temperature: int = Field(..., ge=16, le=30)
 
 # --- Helpers ---
 def parse_warna(warna) -> ColorModel:

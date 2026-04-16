@@ -60,13 +60,13 @@ export default function Navbar() {
   };
 
   return (
-    <nav data-testid="navbar" className="h-16 flex items-center px-6 md:px-12 bg-white border-b border-[#E5E7EB] sticky top-0 z-50">
+    <nav data-testid="navbar" className="h-20 flex items-center px-6 md:px-12 bg-white border-b border-[#E5E7EB] sticky top-0 z-50">
       {/* Left: Logo + STUDIO - min-w to balance with right side */}
       <div className="flex items-center gap-0 cursor-pointer select-none min-w-[150px]" onClick={() => navigate("/studio")} data-testid="nav-brand">
-        <div className="flex items-center bg-[#1C2025] rounded-md px-2.5 py-1.5 gap-2.5">
-          <img src="/company_logo.svg" alt="Logo" className="h-7 w-auto" />
+        <div className="flex items-center rounded-md px-2.5 py-1.5 gap-2.5">
+          <img src="/Logo_Tab_NOBG.png" alt="Logo" className="h-10 w-auto" />
           <div className="w-px h-5 bg-gray-500 opacity-40" />
-          <span className="text-sm font-semibold tracking-wide text-white" style={{ fontFamily: 'Work Sans, sans-serif' }}>
+          <span className="text-base font-semibold tracking-wide text-black" style={{ fontFamily: 'Work Sans, sans-serif' }}>
             STUDIO
           </span>
         </div>
@@ -88,7 +88,7 @@ export default function Navbar() {
 
       {/* Right: On Air/Exit Switch - always visible */}
       <div className="flex items-center gap-2 min-w-[150px] justify-end" data-testid="onair-exit-area">
-        <span className="text-xs font-medium text-[#637083] tracking-wide whitespace-nowrap">On Air/Exit</span>
+        <span className="text-sm font-medium text-[#637083] tracking-wide whitespace-nowrap">On Air/Exit</span>
         <Switch
           data-testid="onair-exit-switch"
           checked={onAirExit}
