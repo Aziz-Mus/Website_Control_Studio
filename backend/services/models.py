@@ -25,7 +25,7 @@ class DeviceUpdate(BaseModel):
     ip: Optional[str] = None
     nama: Optional[str] = None
 
-# --- Room/Relay Models (AC & Headlights) ---
+# --- Room/Relay Models (Headlights only — AC uses flat ACDevice* models below) ---
 class RoomCreate(BaseModel):
     roomName: str
     espIpAddress: str
@@ -56,20 +56,35 @@ class RoomControl(BaseModel):
 class BulkControlRequest(BaseModel):
     rooms: List[RoomControl]
 
-# --- AC Temperature Models ---
-class ACTemperatureRequest(BaseModel):
+# --- AC Device Models (flat structure, no room concept) ---
+class ACDeviceCreate(BaseModel):
+    """Add a new AC device."""
+    deviceName: str
+    ip: str
+
+class ACDeviceUpdate(BaseModel):
+    """Update an existing AC device."""
+    deviceName: Optional[str] = None
+    ip: Optional[str] = None
+
+class ACSingleControl(BaseModel):
+    """Control power for a single AC device by acCode."""
+    acCode: int
+    power: str  # "ON" or "OFF"
+
+class ACAllControl(BaseModel):
+    """Control power for ALL AC devices."""
+    power: str  # "ON" or "OFF"
+
+class ACTempSingle(BaseModel):
     """Set temperature for a single AC device."""
-    roomId: str
-    espIpAddress: str
-    relayId: str
-    channelCode: str
+    acCode: int
     temperature: int = Field(..., ge=16, le=30)
 
-class ACTemperatureAllRequest(BaseModel):
-    """Set temperature for ALL AC devices in a room."""
-    roomId: str
-    espIpAddress: str
+class ACTempAll(BaseModel):
+    """Set temperature for ALL AC devices."""
     temperature: int = Field(..., ge=16, le=30)
+
 
 # --- Helpers ---
 def parse_warna(warna) -> ColorModel:

@@ -50,8 +50,14 @@ def next_relay_id(relays: list) -> str:
             nums.append(0)
     return f"rl{max(nums) + 1:02d}"
 
+def next_ac_code(devices: list) -> int:
+    """Generate next acCode integer for AC devices."""
+    if not devices:
+        return 1
+    return max(d.get("acCode", 0) for d in devices) + 1
+
 # --- File constants ---
 SHOWCASE_NEON_FILE = "devices_showcase.json"
 STUDIO_NEON_FILE = "devices_studio.json"
 HL_ROOMS_FILE = "hl_rooms.json"
-AC_ROOMS_FILE = "ac_rooms.json"
+AC_DEVICES_FILE = "ac_devices.json"

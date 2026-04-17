@@ -1,0 +1,16 @@
+{
+  "devices": [
+    {
+      "acCode": 1,
+      "deviceName": "AC Central",
+      "ip": "10.1.1.1",
+      "lastTemperature": 24
+    },
+    {
+      "acCode": 2,
+      "deviceName": "AC Basement",
+      "ip": "192.168.1.2",
+      "lastTemperature": 24
+    }
+  ]
+}

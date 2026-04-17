@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Lamp, Trash2, Wifi, Pencil, Radio } from "lucide-react";
+import { ArrowLeft, Plus, Lamp, Trash2, Wifi, Pencil, Radio, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -10,7 +10,6 @@ import { toast } from "sonner";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const SWITCH_STORAGE_KEY = "hl_room_switch_states";
 
 function loadStorage(key, fallback) {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
@@ -26,11 +25,20 @@ export default function StudioHeadlights() {
   const [connectSwitch, setConnectSwitch] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hasOnAirConnected, setHasOnAirConnected] = useState(false);
-  const [roomSwitchStates, setRoomSwitchStates] = useState(() => loadStorage(SWITCH_STORAGE_KEY, {}));
+  // Switch states are COMPUTED from relay statuses in localStorage, not stored separately
+  const [roomSwitchStates, setRoomSwitchStates] = useState({});
   const [roomSwitchLoading, setRoomSwitchLoading] = useState({});
 
-  // Persist switch states
-  useEffect(() => { localStorage.setItem(SWITCH_STORAGE_KEY, JSON.stringify(roomSwitchStates)); }, [roomSwitchStates]);
+  // Compute switch state per room: ON only if ALL non-onAirExit relays are "on"
+  const computeSwitchStates = useCallback((roomList) => {
+    const states = {};
+    roomList.forEach(room => {
+      const relayStatuses = loadStorage(`hl_relay_statuses_${room.roomId}`, {});
+      const normalRelays = (room.relays || []).filter(r => !r.isOnAirExit);
+      states[room.roomId] = normalRelays.length > 0 && normalRelays.every(r => relayStatuses[r.relayId] === "on");
+    });
+    setRoomSwitchStates(states);
+  }, []);
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -38,14 +46,23 @@ export default function StudioHeadlights() {
       const r = res.data.rooms || [];
       setRooms(r);
       setHasOnAirConnected(r.some(rm => rm.onAirExitConnected));
+      computeSwitchStates(r);  // Recompute switch states after fetching rooms
     } catch (e) { console.error(e); }
-  }, []);
+  }, [computeSwitchStates]);
 
   useEffect(() => { fetchRooms(); }, [fetchRooms]);
 
+  // Recompute switch states when page becomes visible again (user navigated back from room detail)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden) computeSwitchStates(rooms);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [rooms, computeSwitchStates]);
+
   const openAdd = () => { setEditingRoom(null); setRoomName(""); setEspIp(""); setConnectSwitch(false); setDialogOpen(true); };
 
-  // Bug Fix: When editing, also sync connectSwitch state and show connect button if applicable
   const openEdit = (room) => {
     setEditingRoom(room);
     setRoomName(room.roomName);
@@ -63,31 +80,29 @@ export default function StudioHeadlights() {
         await axios.put(`${API}/studio/headlights/rooms/${editingRoom.roomId}`, {
           roomName: roomName.trim(),
           espIpAddress: espIp.trim(),
-          connectOnAirExit: connectSwitch  // Bug Fix: pass connectOnAirExit on edit too
+          connectOnAirExit: connectSwitch
         });
-        toast.success("Room berhasil diupdate");
+        toast.success("Room updated successfully");
       } else {
         await axios.post(`${API}/studio/headlights/rooms`, { roomName: roomName.trim(), espIpAddress: espIp.trim(), connectOnAirExit: connectSwitch });
-        toast.success(`Room "${roomName}" berhasil ditambahkan`);
+        toast.success(`Room "${roomName}" added`);
       }
       fetchRooms(); setDialogOpen(false);
-    } catch (e) { toast.error("Gagal menyimpan room"); }
+    } catch (e) { toast.error("Failed to save room"); }
     setSaving(false);
   };
 
   const handleDelete = async (roomId) => {
     try {
       await axios.delete(`${API}/studio/headlights/rooms/${roomId}`);
-      toast.success("Room dihapus");
-      setRoomSwitchStates(p => { const n = { ...p }; delete n[roomId]; return n; });
+      toast.success("Room deleted");
       fetchRooms();
-    }
-    catch (e) { toast.error("Gagal menghapus"); }
+    } catch (e) { toast.error("Failed to delete room"); }
   };
 
   const handleRoomSwitch = async (room, checked) => {
     const normalRelays = (room.relays || []).filter(r => !r.isOnAirExit);
-    if (normalRelays.length === 0) { toast.error("Tidak ada device di room ini"); return; }
+    if (normalRelays.length === 0) { toast.error("No devices in this room"); return; }
     setRoomSwitchLoading(p => ({ ...p, [room.roomId]: true }));
     const ep = checked ? `${API}/studio/headlights/control` : `${API}/studio/headlights/deactivate`;
     const payload = { rooms: [{ roomId: room.roomId, espIpAddress: room.espIpAddress, relays: normalRelays.map(r => ({ relayId: r.relayId, channelCode: r.channelCode })) }] };
@@ -95,13 +110,8 @@ export default function StudioHeadlights() {
       const res = await axios.post(ep, payload);
       const sc = res.data.summary?.success || 0;
       const fc = res.data.summary?.failed || 0;
-      const total = res.data.summary?.total || normalRelays.length;
 
-      if (sc > 0) {
-        setRoomSwitchStates(p => ({ ...p, [room.roomId]: checked }));
-      }
-
-      // Sync device statuses to localStorage so room detail page picks them up
+      // Write relay statuses to localStorage so room detail page picks them up
       const relayResults = res.data.rooms?.[0]?.relays || [];
       if (relayResults.length > 0) {
         const action = checked ? "on" : "off";
@@ -112,28 +122,42 @@ export default function StudioHeadlights() {
         localStorage.setItem(storageKey, JSON.stringify({ ...existing, ...ns }));
       }
 
-      if (fc > 0 && sc > 0) {
-        setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
-        toast.warning(`${sc} berhasil, ${fc} device gagal`);
-      } else if (fc > 0 && sc === 0) {
-        setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
-        toast.error(`${fc} device gagal`);
-      } else {
-        toast.success(`${sc} device ${checked ? "dinyalakan" : "dimatikan"}`);
-      }
+      // Recompute switch states from updated localStorage
+      computeSwitchStates(rooms);
+
+      if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} device(s) failed`);
+      else if (fc === sc && fc === 0 && sc === 0) toast.error("Control failed");
+      else if (fc > 0 && sc === 0) toast.error(`${fc} device(s) failed`);
+      else toast.success(`${sc} device(s) ${checked ? "turned on" : "turned off"}`);
     } catch (e) {
-      setRoomSwitchStates(p => ({ ...p, [room.roomId]: false }));
-      toast.error("Gagal mengendalikan");
+      computeSwitchStates(rooms);
+      toast.error("Control failed");
     }
     setRoomSwitchLoading(p => ({ ...p, [room.roomId]: false }));
   };
 
-  // Determine if we should show the On Air/Exit connect button in dialog
-  // Bug Fix: Show also when editing a room that is NOT yet connected,
-  // and no other room already has it connected
+  // Determine if On Air/Exit connect toggle should be available
+  // Allow connect when: no room is connected, or the currently-edited room is not yet connected
   const canConnectOnAir = editingRoom
     ? !editingRoom.onAirExitConnected && !rooms.some(r => r.onAirExitConnected && r.roomId !== editingRoom.roomId)
     : !hasOnAirConnected;
+
+  // For edit: show disconnect option if the room is already connected
+  const showDisconnect = editingRoom?.onAirExitConnected;
+
+  const handleDisconnect = async () => {
+    if (!editingRoom) return;
+    setSaving(true);
+    try {
+      await axios.put(`${API}/studio/headlights/rooms/${editingRoom.roomId}`, {
+        connectOnAirExit: false
+      });
+      toast.success("On Air/Exit switch disconnected");
+      await fetchRooms();  // await so rooms + hasOnAirConnected are updated before dialog closes
+      setDialogOpen(false);
+    } catch (e) { toast.error("Failed to disconnect"); }
+    setSaving(false);
+  };
 
   return (
     <div className="min-h-screen bg-[#F7F8F9]" data-testid="studio-headlights-page">
@@ -154,7 +178,7 @@ export default function StudioHeadlights() {
         {rooms.length === 0 ? (
           <div className="text-center py-16 text-[#637083]" data-testid="hl-rooms-empty">
             <Lamp className="w-12 h-12 mx-auto mb-3 text-[#D1D5DB]" strokeWidth={1.5} />
-            <p className="text-sm">Belum ada room yang ditambahkan.</p>
+            <p className="text-sm">No rooms added yet.</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -162,7 +186,6 @@ export default function StudioHeadlights() {
               <div key={room.roomId} data-testid={`hl-room-${room.roomId}`}
                 className="bg-white border border-[#E5E7EB] rounded-md p-4 hover:shadow-md hover:border-[#DA2C38] transition-all cursor-pointer group relative"
                 onClick={() => navigate(`/studio/headlights/${room.roomId}`)}>
-                {/* Top-left: Switch to control all devices */}
                 <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
                   <Switch
                     data-testid={`room-switch-${room.roomId}`}
@@ -204,43 +227,63 @@ export default function StudioHeadlights() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-md" data-testid="hl-room-dialog">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: 'Work Sans, sans-serif' }}>{editingRoom ? "Edit Room" : "Tambah Room Baru"}</DialogTitle>
-            <DialogDescription>{editingRoom ? "Update nama dan IP room." : "Masukkan nama room dan IP ESP."}</DialogDescription>
+            <DialogTitle style={{ fontFamily: 'Work Sans, sans-serif' }}>{editingRoom ? "Edit Room" : "Add New Room"}</DialogTitle>
+            <DialogDescription>{editingRoom ? "Update room name and ESP IP address." : "Enter room name and ESP IP address."}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label>Nama Room</Label>
-              <Input data-testid="hl-room-name-input" placeholder="Studio Utama" value={roomName} onChange={(e) => setRoomName(e.target.value)} required />
+              <Label>Room Name</Label>
+              <Input data-testid="hl-room-name-input" placeholder="Main Studio" value={roomName} onChange={(e) => setRoomName(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label>ESP IP Address</Label>
               <Input data-testid="hl-room-ip-input" placeholder="192.168.1.5" value={espIp} onChange={(e) => setEspIp(e.target.value)} required />
             </div>
-            {/* Bug Fix: Show connect button for both Add and Edit modes when applicable */}
-            {canConnectOnAir && (
-              <div className="border border-[#E5E7EB] rounded-md p-3 space-y-2" data-testid="onair-exit-connect-section">
-                <Label className="text-xs text-[#637083]">Connect Switch On Air/Exit?</Label>
-                <Button type="button" size="sm" variant={connectSwitch ? "default" : "outline"}
-                  className={`w-full text-xs rounded-md ${connectSwitch ? "bg-[#DA2C38] hover:bg-[#B9252F] text-white" : ""}`}
-                  onClick={() => setConnectSwitch(!connectSwitch)} data-testid="connect-onair-btn">
-                  <Radio className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                  {connectSwitch ? "Connected - On Air/Exit akan terhubung" : "Klik untuk hubungkan On Air/Exit"}
+
+            {/* Show disconnect option if editing a room that is connected */}
+            {showDisconnect && (
+              <div className="border border-[#DA2C38] rounded-md p-3 bg-red-50 space-y-2" data-testid="onair-exit-connected-section">
+                <div className="flex items-center gap-2">
+                  <Radio className="w-4 h-4 text-[#DA2C38]" strokeWidth={2} />
+                  <span className="text-xs text-[#DA2C38] font-medium">Connected to On Air/Exit Switch</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="w-full text-xs border-[#DA2C38] text-[#DA2C38] hover:bg-red-100 rounded-md"
+                  onClick={handleDisconnect}
+                  disabled={saving}
+                  data-testid="disconnect-onair-btn"
+                >
+                  <WifiOff className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                  Disconnect On Air/Exit
                 </Button>
               </div>
             )}
-            {/* Show info if already connected */}
-            {editingRoom?.onAirExitConnected && (
-              <div className="border border-[#DA2C38] rounded-md p-3 bg-red-50">
-                <div className="flex items-center gap-2">
-                  <Radio className="w-4 h-4 text-[#DA2C38]" strokeWidth={2} />
-                  <span className="text-xs text-[#DA2C38] font-medium">Room ini sudah terhubung ke Switch On Air/Exit</span>
-                </div>
+
+            {/* Show connect option if no room is connected yet and this room is not connected */}
+            {canConnectOnAir && (
+              <div className="border border-[#E5E7EB] rounded-md p-3 space-y-2" data-testid="onair-exit-connect-section">
+                <Label className="text-xs text-[#637083]">Connect On Air/Exit Switch?</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={connectSwitch ? "default" : "outline"}
+                  className={`w-full text-xs rounded-md ${connectSwitch ? "bg-[#DA2C38] hover:bg-[#B9252F] text-white" : ""}`}
+                  onClick={() => setConnectSwitch(!connectSwitch)}
+                  data-testid="connect-onair-btn"
+                >
+                  <Radio className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
+                  {connectSwitch ? "Connected — On Air/Exit will be linked" : "Click to connect On Air/Exit"}
+                </Button>
               </div>
             )}
+
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-md">Batal</Button>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-md">Cancel</Button>
               <Button type="submit" disabled={saving} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md" data-testid="hl-room-save-btn">
-                {saving ? "Menyimpan..." : "Simpan"}
+                {saving ? "Saving..." : "Save"}
               </Button>
             </DialogFooter>
           </form>

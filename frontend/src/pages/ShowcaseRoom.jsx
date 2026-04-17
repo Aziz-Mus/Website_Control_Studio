@@ -12,7 +12,6 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const STORAGE_KEY = "showcase_device_statuses";
 const SELECTED_KEY = "showcase_selected_ids";
 
-// Helper to load from localStorage safely
 function loadStorage(key, fallback) {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
 }
@@ -26,7 +25,6 @@ export default function ShowcaseRoom() {
   const [loading, setLoading] = useState(false);
   const [deviceStatuses, setDeviceStatuses] = useState(() => loadStorage(STORAGE_KEY, {}));
 
-  // Persist statuses to localStorage whenever they change
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
   useEffect(() => { localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedIds)); }, [selectedIds]);
 
@@ -36,19 +34,19 @@ export default function ShowcaseRoom() {
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
   const handleAdd = async ({ ip, nama }) => {
-    try { await axios.post(`${API}/showcase/devices`, { ip, nama }); toast.success(`"${nama}" ditambahkan`); fetchDevices(); } catch (e) { toast.error("Gagal"); }
+    try { await axios.post(`${API}/showcase/devices`, { ip, nama }); toast.success(`"${nama}" added`); fetchDevices(); } catch (e) { toast.error("Failed to add light"); }
   };
   const handleUpdate = async (kode, data) => {
-    try { await axios.put(`${API}/showcase/devices/${kode}`, data); toast.success("Diupdate"); fetchDevices(); } catch (e) { toast.error("Gagal"); }
+    try { await axios.put(`${API}/showcase/devices/${kode}`, data); toast.success("Light updated"); fetchDevices(); } catch (e) { toast.error("Failed to update"); }
   };
   const handleDelete = async (kode) => {
     try {
       await axios.delete(`${API}/showcase/devices/${kode}`);
-      toast.success("Dihapus");
+      toast.success("Light deleted");
       setSelectedIds(p => p.filter(id => id !== kode));
       setDeviceStatuses(p => { const n = { ...p }; delete n[kode]; return n; });
       fetchDevices();
-    } catch (e) { toast.error("Gagal"); }
+    } catch (e) { toast.error("Failed to delete"); }
   };
   const handleEdit = (device) => { setEditingDevice(device); setDialogOpen(true); };
   const openAdd = () => { setEditingDevice(null); setDialogOpen(true); };
@@ -59,20 +57,15 @@ export default function ShowcaseRoom() {
     const ns = {};
     report.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; });
     setDeviceStatuses(p => ({ ...p, ...ns }));
-    // Toast per partial failure
     const failedCount = report.filter(d => d.status !== "success").length;
     const successCount = report.filter(d => d.status === "success").length;
-    if (failedCount > 0 && successCount > 0) {
-      toast.warning(`${successCount} berhasil, ${failedCount} gagal`);
-    } else if (failedCount > 0) {
-      toast.error(`${failedCount} lampu gagal`);
-    } else {
-      toast.success("Semua lampu berhasil");
-    }
+    if (failedCount > 0 && successCount > 0) toast.warning(`${successCount} succeeded, ${failedCount} failed`);
+    else if (failedCount > 0) toast.error(`${failedCount} light(s) failed`);
+    else toast.success("All lights successful");
   };
 
   const handleApplyColor = async ({ rgb, brightness: br }) => {
-    if (!devices.length) { toast.error("Tidak ada lampu"); return; }
+    if (!devices.length) { toast.error("No lights configured"); return; }
     setLoading(true);
     const payload = { Warna: { Red: rgb.r, Green: rgb.g, Blue: rgb.b }, Kecerahan: br || brightness };
     try {
@@ -83,15 +76,15 @@ export default function ShowcaseRoom() {
         setDeviceStatuses(p => ({ ...p, ...ns }));
         const fc = Object.values(ns).filter(s => s === "failed").length;
         const sc = Object.values(ns).filter(s => s === "on").length;
-        if (fc > 0 && sc > 0) toast.warning(`${sc} berhasil, ${fc} gagal`);
-        else if (fc > 0) toast.error(`${fc} lampu gagal`);
-        else toast.success(`Diterapkan ke ${selectedIds.length} lampu`);
+        if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} failed`);
+        else if (fc > 0) toast.error(`${fc} light(s) failed`);
+        else toast.success(`Applied to ${selectedIds.length} light(s)`);
       } else {
         const res = await axios.post(`${API}/showcase/lampu`, payload);
         if (res.data.devices) updateStatusesFromResponse(res.data.devices, "on");
-        else toast.success("Diterapkan ke semua lampu");
+        else toast.success("Applied to all lights");
       }
-    } catch (e) { toast.error("Gagal menghubungi server"); }
+    } catch (e) { toast.error("Failed to reach server"); }
     setLoading(false);
   };
 
@@ -100,8 +93,8 @@ export default function ShowcaseRoom() {
     try {
       const res = await axios.post(`${API}/showcase/lampu`, { Warna: { Red: 255, Green: 255, Blue: 255 }, Kecerahan: brightness });
       if (res.data.devices) updateStatusesFromResponse(res.data.devices, "on");
-      else toast.success("Semua lampu dinyalakan");
-    } catch (e) { toast.error("Gagal"); }
+      else toast.success("All lights turned on");
+    } catch (e) { toast.error("Failed to reach server"); }
     setLoading(false);
   };
 
@@ -113,9 +106,9 @@ export default function ShowcaseRoom() {
       else {
         const ao = {}; devices.forEach(d => { ao[d.kode] = "off"; });
         setDeviceStatuses(p => ({ ...p, ...ao }));
-        toast.success("Semua lampu dimatikan");
+        toast.success("All lights turned off");
       }
-    } catch (e) { toast.error("Gagal"); }
+    } catch (e) { toast.error("Failed to reach server"); }
     setLoading(false);
   };
 
@@ -128,7 +121,7 @@ export default function ShowcaseRoom() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1C2025]" style={{ fontFamily: 'Work Sans, sans-serif' }} data-testid="showcase-title">Showcase Room</h1>
-            <p className="text-sm text-[#637083] mt-1">Managing {devices.length} neon modules.</p>
+            <p className="text-sm text-[#637083] mt-1">Managing {devices.length} neon module(s).</p>
           </div>
           <div className="flex items-center gap-2">
             <Button className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs" onClick={handleActivateAll} disabled={loading} data-testid="activate-all-btn">ACTIVATE ALL</Button>

@@ -10,11 +10,11 @@ from starlette.middleware.cors import CORSMiddleware
 from services.models import (
     ControlRequest, DeviceCreate, DeviceUpdate, parse_warna,
     RoomCreate, RoomUpdate, RelayCreate, RelayUpdate, BulkControlRequest,
-    ACTemperatureRequest, ACTemperatureAllRequest
+    ACDeviceCreate, ACDeviceUpdate, ACSingleControl, ACAllControl, ACTempSingle, ACTempAll
 )
 from services.storage import (
-    read_json, write_json, next_kode, next_room_id, next_relay_id,
-    SHOWCASE_NEON_FILE, STUDIO_NEON_FILE, HL_ROOMS_FILE, AC_ROOMS_FILE
+    read_json, write_json, next_kode, next_room_id, next_relay_id, next_ac_code,
+    SHOWCASE_NEON_FILE, STUDIO_NEON_FILE, HL_ROOMS_FILE, AC_DEVICES_FILE
 )
 from services.bulb_service import control_wiz_light, turn_off_wiz_light
 from services.relay_service import control_relay_channel
@@ -71,38 +71,6 @@ async def _relay_control(rooms_data, request: BulkControlRequest, state: str):
     success = sum(1 for r in results for rl in r["relays"] if rl["status"] == "success")
     return {"status": "success" if success == total else "partial_success" if success > 0 else "failed", "summary": {"total": total, "success": success, "failed": total - success}, "rooms": results}
 
-
-async def _ac_control(request: BulkControlRequest, power: str):
-    """
-    Helper untuk AC — menggunakan ACService.
-    Mengirim power (ON/OFF) + lastTemperature dari storage dalam satu payload ke ESP.
-    """
-    rooms = _ac_rooms()
-    results = []
-    for room_req in request.rooms:
-        # Cari data room di storage untuk mendapat lastTemperature per relay
-        stored_room = next((r for r in rooms if r["roomId"] == room_req.roomId), None)
-        rr = {"roomId": room_req.roomId, "espIpAddress": room_req.espIpAddress, "relays": []}
-        svc = ACService(room_req.espIpAddress)  # Instansiate on-the-fly per request
-        for relay_req in room_req.relays:
-            # Ambil lastTemperature dari storage; default 24 jika belum pernah diset
-            stored_relay = None
-            if stored_room:
-                stored_relay = next(
-                    (rl for rl in stored_room.get("relays", []) if rl["relayId"] == relay_req.relayId), None
-                )
-            last_temp = stored_relay.get("lastTemperature", 24) if stored_relay else 24
-            res = await svc.control_ac(power, last_temp)
-            rr["relays"].append({
-                "relayId": relay_req.relayId,
-                "channelCode": relay_req.channelCode,
-                "status": res.get("status", "failed"),
-                "error": res.get("error")
-            })
-        results.append(rr)
-    total = sum(len(r["relays"]) for r in results)
-    success = sum(1 for r in results for rl in r["relays"] if rl["status"] == "success")
-    return {"status": "success" if success == total else "partial_success" if success > 0 else "failed", "summary": {"total": total, "success": success, "failed": total - success}, "rooms": results}
 
 # ===================== SHOWCASE NEON =====================
 @api_router.get("/showcase/devices")
@@ -217,12 +185,12 @@ async def update_hl_room(room_id: str, update: RoomUpdate):
     if not room: raise HTTPException(status_code=404, detail="Not found")
     if update.roomName is not None: room["roomName"] = update.roomName
     if update.espIpAddress is not None: room["espIpAddress"] = update.espIpAddress
-    # Bug Fix: Support connecting On Air/Exit during edit
+
     if update.connectOnAirExit is True:
+        # Connect: only if no other room is connected and this room is not yet connected
         has_connected = any(r.get("onAirExitConnected") for r in rooms if r["roomId"] != room_id)
         if not has_connected and not room.get("onAirExitConnected"):
             room["onAirExitConnected"] = True
-            # Add On Air/Exit relay if not already present
             existing_onair = next((rl for rl in room.get("relays", []) if rl.get("isOnAirExit")), None)
             if not existing_onair:
                 room.setdefault("relays", []).append({
@@ -231,6 +199,13 @@ async def update_hl_room(room_id: str, update: RoomUpdate):
                     "channelCode": "switch",
                     "isOnAirExit": True
                 })
+    elif update.connectOnAirExit is False:
+        # Disconnect: remove On Air/Exit relay and clear the flag
+        # This allows other rooms to connect to On Air/Exit afterward
+        if room.get("onAirExitConnected"):
+            room["onAirExitConnected"] = False
+            room["relays"] = [rl for rl in room.get("relays", []) if not rl.get("isOnAirExit")]
+
     _hl_write(rooms)
     return {"status": "success", "room": room}
 
@@ -312,172 +287,105 @@ async def control_onair_exit(state: str = "ON"):
                 return {"status": result["status"], "error": result.get("error"), "roomId": room["roomId"]}
     return {"status": "failed", "error": "No room connected to On Air/Exit switch"}
 
-# ===================== AC (Room → Relay) =====================
-def _ac_rooms(): return read_json(AC_ROOMS_FILE, "rooms")
-def _ac_write(rooms): write_json(AC_ROOMS_FILE, rooms, "rooms")
+# ===================== AC DEVICES (flat, no room concept) =====================
+def _ac_devices(): return read_json(AC_DEVICES_FILE, "devices")
+def _ac_write(devices): write_json(AC_DEVICES_FILE, devices, "devices")
 
-@api_router.get("/studio/ac/rooms")
-async def get_ac_rooms():
-    rooms = _ac_rooms()
-    return {"count": len(rooms), "rooms": rooms}
+@api_router.get("/studio/ac/devices")
+async def get_ac_devices():
+    devices = _ac_devices()
+    return {"count": len(devices), "devices": devices}
 
-@api_router.post("/studio/ac/rooms")
-async def add_ac_room(room: RoomCreate):
-    rooms = _ac_rooms()
-    rid = next_room_id(rooms)
-    new = {"roomId": rid, "roomName": room.roomName, "espIpAddress": room.espIpAddress, "relays": []}
-    rooms.append(new)
-    _ac_write(rooms)
-    return {"status": "success", "room": new}
+@api_router.post("/studio/ac/devices")
+async def add_ac_device(device: ACDeviceCreate):
+    devices = _ac_devices()
+    code = next_ac_code(devices)
+    new = {"acCode": code, "deviceName": device.deviceName, "ip": device.ip, "lastTemperature": 24}
+    devices.append(new)
+    _ac_write(devices)
+    return {"status": "success", "device": new}
 
-@api_router.put("/studio/ac/rooms/{room_id}")
-async def update_ac_room(room_id: str, update: RoomUpdate):
-    rooms = _ac_rooms()
-    room = next((r for r in rooms if r["roomId"] == room_id), None)
-    if not room: raise HTTPException(status_code=404, detail="Not found")
-    if update.roomName is not None: room["roomName"] = update.roomName
-    if update.espIpAddress is not None: room["espIpAddress"] = update.espIpAddress
-    _ac_write(rooms)
-    return {"status": "success", "room": room}
+@api_router.put("/studio/ac/devices/{ac_code}")
+async def update_ac_device(ac_code: int, update: ACDeviceUpdate):
+    devices = _ac_devices()
+    dev = next((d for d in devices if d["acCode"] == ac_code), None)
+    if not dev: raise HTTPException(status_code=404, detail="Device not found")
+    if update.deviceName is not None: dev["deviceName"] = update.deviceName
+    if update.ip is not None: dev["ip"] = update.ip
+    _ac_write(devices)
+    return {"status": "success", "device": dev}
 
-@api_router.delete("/studio/ac/rooms/{room_id}")
-async def delete_ac_room(room_id: str):
-    rooms = _ac_rooms()
-    new = [r for r in rooms if r["roomId"] != room_id]
-    if len(new) == len(rooms): raise HTTPException(status_code=404, detail="Not found")
+@api_router.delete("/studio/ac/devices/{ac_code}")
+async def delete_ac_device(ac_code: int):
+    devices = _ac_devices()
+    new = [d for d in devices if d["acCode"] != ac_code]
+    if len(new) == len(devices): raise HTTPException(status_code=404, detail="Device not found")
     _ac_write(new)
     return {"status": "success"}
 
-@api_router.get("/studio/ac/rooms/{room_id}")
-async def get_ac_room(room_id: str):
-    rooms = _ac_rooms()
-    room = next((r for r in rooms if r["roomId"] == room_id), None)
-    if not room: raise HTTPException(status_code=404, detail="Not found")
-    return {"status": "success", "room": room}
-
-@api_router.post("/studio/ac/rooms/{room_id}/relays")
-async def add_ac_relay(room_id: str, relay: RelayCreate):
-    rooms = _ac_rooms()
-    room = next((r for r in rooms if r["roomId"] == room_id), None)
-    if not room: raise HTTPException(status_code=404, detail="Not found")
-    rlid = next_relay_id(room.get("relays", []))
-    new = {"relayId": rlid, "deviceName": relay.deviceName, "channelCode": relay.channelCode, "lastTemperature": 24}
-    room.setdefault("relays", []).append(new)
-    _ac_write(rooms)
-    return {"status": "success", "relay": new}
-
-@api_router.put("/studio/ac/rooms/{room_id}/relays/{relay_id}")
-async def update_ac_relay(room_id: str, relay_id: str, update: RelayUpdate):
-    rooms = _ac_rooms()
-    room = next((r for r in rooms if r["roomId"] == room_id), None)
-    if not room: raise HTTPException(status_code=404, detail="Not found")
-    relay = next((rl for rl in room.get("relays", []) if rl["relayId"] == relay_id), None)
-    if not relay: raise HTTPException(status_code=404, detail="Not found")
-    if update.deviceName is not None: relay["deviceName"] = update.deviceName
-    if update.channelCode is not None: relay["channelCode"] = update.channelCode
-    _ac_write(rooms)
-    return {"status": "success", "relay": relay}
-
-@api_router.delete("/studio/ac/rooms/{room_id}/relays/{relay_id}")
-async def delete_ac_relay(room_id: str, relay_id: str):
-    rooms = _ac_rooms()
-    room = next((r for r in rooms if r["roomId"] == room_id), None)
-    if not room: raise HTTPException(status_code=404, detail="Not found")
-    old = len(room.get("relays", []))
-    room["relays"] = [rl for rl in room.get("relays", []) if rl["relayId"] != relay_id]
-    if len(room["relays"]) == old: raise HTTPException(status_code=404, detail="Not found")
-    _ac_write(rooms)
-    return {"status": "success"}
-
 @api_router.post("/studio/ac/control")
-async def control_ac(request: BulkControlRequest):
-    """Nyalakan AC — mengirim power=ON + lastTemperature ke ESP via ACService."""
-    return await _ac_control(request, "ON")
+async def control_ac_single(request: ACSingleControl):
+    """Control power for a single AC device. Backend fetches IP from storage."""
+    devices = _ac_devices()
+    dev = next((d for d in devices if d["acCode"] == request.acCode), None)
+    if not dev: raise HTTPException(status_code=404, detail="Device not found")
+    svc = ACService(dev["ip"])
+    result = await svc.control_ac(request.power, dev.get("lastTemperature", 24))
+    return {"status": result.get("status", "failed"), "acCode": request.acCode, "power": request.power, "error": result.get("error")}
 
-@api_router.post("/studio/ac/deactivate")
-async def deactivate_ac(request: BulkControlRequest):
-    """Matikan AC — mengirim power=OFF + lastTemperature ke ESP via ACService."""
-    return await _ac_control(request, "OFF")
+@api_router.post("/studio/ac/control/all")
+async def control_ac_all(request: ACAllControl):
+    """Control power for ALL AC devices concurrently."""
+    devices = _ac_devices()
+    if not devices: return {"status": "no_devices", "results": []}
+    tasks = [ACService(d["ip"]).control_ac(request.power, d.get("lastTemperature", 24)) for d in devices]
+    results = await asyncio.gather(*tasks)
+    device_results = []
+    success_count = 0
+    for dev, res in zip(devices, results):
+        s = res.get("status", "failed")
+        if s == "success": success_count += 1
+        device_results.append({"acCode": dev["acCode"], "deviceName": dev["deviceName"], "status": s, "error": res.get("error")})
+    total = len(devices)
+    overall = "success" if success_count == total else "partial_success" if success_count > 0 else "failed"
+    return {"status": overall, "summary": {"total": total, "success": success_count, "failed": total - success_count}, "results": device_results}
 
-# ===================== AC TEMPERATURE =====================
 @api_router.post("/studio/ac/temperature")
-async def set_ac_temp_single(request: ACTemperatureRequest):
-    """
-    Set suhu untuk satu device AC.
-    Mengirim power=ON + temperature baru ke ESP via ACService.
-    Jika berhasil, lastTemperature diperbarui di ac_rooms.json.
-    JSON: { "roomId": "rm01", "espIpAddress": "10.1.1.1", "relayId": "rl01", "channelCode": "1", "temperature": 24 }
-    """
-    rooms = _ac_rooms()
-    room = next((r for r in rooms if r["roomId"] == request.roomId), None)
-    if not room: raise HTTPException(status_code=404, detail="Room tidak ditemukan")
-    relay = next((rl for rl in room.get("relays", []) if rl["relayId"] == request.relayId), None)
-    if not relay: raise HTTPException(status_code=404, detail="Relay tidak ditemukan")
-
-    # Gunakan ACService langsung — kirim ON + suhu baru sekaligus
-    svc = ACService(request.espIpAddress)
+async def set_ac_temp_single(request: ACTempSingle):
+    """Set temperature for a single AC device. Backend fetches IP from storage."""
+    devices = _ac_devices()
+    dev = next((d for d in devices if d["acCode"] == request.acCode), None)
+    if not dev: raise HTTPException(status_code=404, detail="Device not found")
+    svc = ACService(dev["ip"])
     result = await svc.control_ac("ON", request.temperature)
-
     if result.get("status") == "success":
-        # Simpan lastTemperature ke storage hanya jika berhasil
-        relay["lastTemperature"] = request.temperature
-        _ac_write(rooms)
-        return {"status": "success", "relayId": request.relayId, "temperature": request.temperature}
+        dev["lastTemperature"] = request.temperature
+        _ac_write(devices)
+        return {"status": "success", "acCode": request.acCode, "temperature": request.temperature}
     else:
-        return {
-            "status": "failed",
-            "relayId": request.relayId,
-            "error": result.get("error"),
-            "temperature": relay.get("lastTemperature", 24)  # Kembalikan suhu terakhir yang valid
-        }
-
+        return {"status": "failed", "acCode": request.acCode, "error": result.get("error"), "temperature": dev.get("lastTemperature", 24)}
 
 @api_router.post("/studio/ac/temperature/all")
-async def set_ac_temp_all(request: ACTemperatureAllRequest):
-    """
-    Set suhu untuk SEMUA device AC dalam satu room sekaligus.
-    Mengirim power=ON + temperature baru ke ESP via ACService secara concurrent.
-    JSON: { "roomId": "rm01", "espIpAddress": "10.1.1.1", "temperature": 24 }
-    """
-    rooms = _ac_rooms()
-    room = next((r for r in rooms if r["roomId"] == request.roomId), None)
-    if not room: raise HTTPException(status_code=404, detail="Room tidak ditemukan")
-
-    relays = room.get("relays", [])
-    if not relays:
-        return {"status": "no_devices", "results": []}
-
-    # Instansiate ACService sekali — semua relay dalam room pakai IP ESP yang sama
-    svc = ACService(request.espIpAddress)
-    tasks = [svc.control_ac("ON", request.temperature) for _ in relays]
+async def set_ac_temp_all(request: ACTempAll):
+    """Set temperature for ALL AC devices concurrently."""
+    devices = _ac_devices()
+    if not devices: return {"status": "no_devices", "results": []}
+    tasks = [ACService(d["ip"]).control_ac("ON", request.temperature) for d in devices]
     results = await asyncio.gather(*tasks)
-
-    relay_results = []
+    device_results = []
     success_count = 0
-    for relay, res in zip(relays, results):
+    for dev, res in zip(devices, results):
         if res.get("status") == "success":
-            relay["lastTemperature"] = request.temperature
+            dev["lastTemperature"] = request.temperature
             success_count += 1
-            relay_results.append({"relayId": relay["relayId"], "status": "success", "temperature": request.temperature})
+            device_results.append({"acCode": dev["acCode"], "deviceName": dev["deviceName"], "status": "success", "temperature": request.temperature})
         else:
-            relay_results.append({
-                "relayId": relay["relayId"],
-                "status": "failed",
-                "error": res.get("error"),
-                "temperature": relay.get("lastTemperature", 24)  # Tidak diubah jika gagal
-            })
-
-    # Simpan perubahan lastTemperature (hanya yang berhasil)
-    _ac_write(rooms)
-
-    total = len(relays)
+            device_results.append({"acCode": dev["acCode"], "deviceName": dev["deviceName"], "status": "failed", "error": res.get("error"), "temperature": dev.get("lastTemperature", 24)})
+    _ac_write(devices)  # Save successful lastTemperature updates
+    total = len(devices)
     overall = "success" if success_count == total else "partial_success" if success_count > 0 else "failed"
-    return {
-        "status": overall,
-        "summary": {"total": total, "success": success_count, "failed": total - success_count},
-        "temperature": request.temperature,
-        "results": relay_results
-    }
+    return {"status": overall, "summary": {"total": total, "success": success_count, "failed": total - success_count}, "temperature": request.temperature, "results": device_results}
+
 
 # ===================== ROOT =====================
 @api_router.get("/")

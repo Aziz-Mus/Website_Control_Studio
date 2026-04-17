@@ -35,16 +35,16 @@ export default function StudioNeon() {
   }, []);
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
-  const handleAdd = async ({ ip, nama }) => { try { await axios.post(`${API}/studio/neon/devices`, { ip, nama }); toast.success(`"${nama}" ditambahkan`); fetchDevices(); } catch (e) { toast.error("Gagal"); } };
-  const handleUpdate = async (kode, data) => { try { await axios.put(`${API}/studio/neon/devices/${kode}`, data); toast.success("Diupdate"); fetchDevices(); } catch (e) { toast.error("Gagal"); } };
+  const handleAdd = async ({ ip, nama }) => { try { await axios.post(`${API}/studio/neon/devices`, { ip, nama }); toast.success(`"${nama}" added`); fetchDevices(); } catch (e) { toast.error("Failed to add light"); } };
+  const handleUpdate = async (kode, data) => { try { await axios.put(`${API}/studio/neon/devices/${kode}`, data); toast.success("Light updated"); fetchDevices(); } catch (e) { toast.error("Failed to update"); } };
   const handleDelete = async (kode) => {
     try {
       await axios.delete(`${API}/studio/neon/devices/${kode}`);
-      toast.success("Dihapus");
+      toast.success("Light deleted");
       setSelectedIds(p => p.filter(id => id !== kode));
       setDeviceStatuses(p => { const n = { ...p }; delete n[kode]; return n; });
       fetchDevices();
-    } catch (e) { toast.error("Gagal"); }
+    } catch (e) { toast.error("Failed to delete"); }
   };
   const handleEdit = (device) => { setEditingDevice(device); setDialogOpen(true); };
   const openAdd = () => { setEditingDevice(null); setDialogOpen(true); };
@@ -57,9 +57,9 @@ export default function StudioNeon() {
     setDeviceStatuses(p => ({ ...p, ...ns }));
     const fc = report.filter(d => d.status !== "success").length;
     const sc = report.filter(d => d.status === "success").length;
-    if (fc > 0 && sc > 0) toast.warning(`${sc} berhasil, ${fc} gagal`);
-    else if (fc > 0) toast.error(`${fc} lampu gagal`);
-    else toast.success("Semua berhasil");
+    if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} failed`);
+    else if (fc > 0) toast.error(`${fc} light(s) failed`);
+    else toast.success("All lights successful");
   };
 
   const handleApplyColor = async ({ rgb, brightness: br }) => {
@@ -73,15 +73,15 @@ export default function StudioNeon() {
         setDeviceStatuses(p => ({ ...p, ...ns }));
         const fc = Object.values(ns).filter(s => s === "failed").length;
         const sc = Object.values(ns).filter(s => s === "on").length;
-        if (fc > 0 && sc > 0) toast.warning(`${sc} berhasil, ${fc} gagal`);
-        else if (fc > 0) toast.error(`${fc} lampu gagal`);
-        else toast.success(`Diterapkan ke ${selectedIds.length} lampu`);
+        if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} failed`);
+        else if (fc > 0) toast.error(`${fc} light(s) failed`);
+        else toast.success(`Applied to ${selectedIds.length} light(s)`);
       } else {
         const res = await axios.post(`${API}/studio/neon/lampu`, payload);
         if (res.data.devices) updateFromResponse(res.data.devices, "on");
-        else toast.success("Diterapkan");
+        else toast.success("Color applied");
       }
-    } catch (e) { toast.error("Gagal"); }
+    } catch (e) { toast.error("Failed to reach server"); }
     setLoading(false);
   };
 
@@ -90,8 +90,8 @@ export default function StudioNeon() {
     try {
       const res = await axios.post(`${API}/studio/neon/lampu`, { Warna: { Red: 255, Green: 255, Blue: 255 }, Kecerahan: brightness });
       if (res.data.devices) updateFromResponse(res.data.devices, "on");
-      else toast.success("Dinyalakan");
-    } catch (e) { toast.error("Gagal"); }
+      else toast.success("All lights turned on");
+    } catch (e) { toast.error("Failed to reach server"); }
     setLoading(false);
   };
 
@@ -100,8 +100,8 @@ export default function StudioNeon() {
     try {
       const res = await axios.post(`${API}/studio/neon/turn-off`);
       if (res.data.devices) updateFromResponse(res.data.devices, "off");
-      else { const ao = {}; devices.forEach(d => { ao[d.kode] = "off"; }); setDeviceStatuses(p => ({ ...p, ...ao })); toast.success("Dimatikan"); }
-    } catch (e) { toast.error("Gagal"); }
+      else { const ao = {}; devices.forEach(d => { ao[d.kode] = "off"; }); setDeviceStatuses(p => ({ ...p, ...ao })); toast.success("All lights turned off"); }
+    } catch (e) { toast.error("Failed to reach server"); }
     setLoading(false);
   };
 
@@ -113,7 +113,7 @@ export default function StudioNeon() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <button onClick={() => navigate("/studio")} className="flex items-center gap-1.5 text-sm text-[#637083] hover:text-[#1C2025] mb-4 transition-colors" data-testid="back-to-studio-btn"><ArrowLeft className="w-4 h-4" strokeWidth={1.5} />Back to Studio</button>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div><h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1C2025]" style={{ fontFamily: 'Work Sans, sans-serif' }} data-testid="studio-neon-title">Studio: Neon Controls</h1><p className="text-sm text-[#637083] mt-1">Managing {devices.length} neon nodes.</p></div>
+          <div><h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1C2025]" style={{ fontFamily: 'Work Sans, sans-serif' }} data-testid="studio-neon-title">Studio: Neon Controls</h1><p className="text-sm text-[#637083] mt-1">Managing {devices.length} neon node(s).</p></div>
           <div className="flex items-center gap-2">
             <Button className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs" onClick={handleActivateAll} disabled={loading} data-testid="studio-activate-all-btn">ACTIVATE ALL</Button>
             <Button variant="outline" className="border-[#DA2C38] text-[#DA2C38] hover:bg-red-50 rounded-md text-xs" onClick={handleDeactivateAll} disabled={loading} data-testid="studio-deactivate-all-btn">DEACTIVATE ALL</Button>

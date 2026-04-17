@@ -5,8 +5,8 @@ export default function NeonGrid({ devices, selectedIds, onToggleSelect, onDelet
     return (
       <div className="text-center py-12 text-[#637083]" data-testid="neon-grid-empty">
         <Lightbulb className="w-12 h-12 mx-auto mb-3 text-[#D1D5DB]" strokeWidth={1.5} />
-        <p className="text-sm">Belum ada lampu yang ditambahkan.</p>
-        <p className="text-xs mt-1">Klik "Add Light" untuk menambahkan lampu baru.</p>
+        <p className="text-sm">No lights added yet.</p>
+        <p className="text-xs mt-1">Click "Add Light" to add a new light.</p>
       </div>
     );
   }
@@ -15,12 +15,7 @@ export default function NeonGrid({ devices, selectedIds, onToggleSelect, onDelet
       {devices.map((device) => {
         const isSelected = selectedIds.includes(device.kode);
         const st = deviceStatuses[device.kode] || "idle";
-
-        // Bug Fix: Border ONLY follows selection state, not device status.
-        // This allows unselecting a card back to gray even if status is ON or FAILED.
         const bc = isSelected ? "border-[#DA2C38]" : "border-[#E5E7EB]";
-
-        // Background still follows status for visual feedback inside the card
         const bg = st === "on" ? "bg-red-50" : st === "failed" ? "bg-yellow-50" : isSelected ? "bg-red-50" : "bg-gray-50";
 
         return (
@@ -33,7 +28,7 @@ export default function NeonGrid({ devices, selectedIds, onToggleSelect, onDelet
                 <Lightbulb className={`w-5 h-5 ${st === "on" ? "text-[#DA2C38]" : st === "failed" ? "text-[#F59E0B]" : isSelected ? "text-[#DA2C38]" : "text-[#637083]"}`} strokeWidth={1.5} />
               </div>
               <div className="text-center w-full">
-                <p className="text-[10px] uppercase tracking-wider text-[#637083]">Kode {device.kode}</p>
+                <p className="text-[10px] uppercase tracking-wider text-[#637083]">Code {device.kode}</p>
                 <p className="text-xs font-medium text-[#1C2025] truncate" title={device.nama}>{device.nama}</p>
                 {device.ip && <p className="text-[10px] text-[#637083] truncate" title={device.ip}>{device.ip}</p>}
               </div>

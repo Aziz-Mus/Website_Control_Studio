@@ -2,27 +2,27 @@
   "rooms": [
     {
       "roomId": "rm01",
-      "roomName": "Lampu Besar",
+      "roomName": "Main Studio",
       "espIpAddress": "192.168.1.161",
       "relays": [
         {
           "relayId": "rl01",
-          "deviceName": "Control 1",
+          "deviceName": "Satu",
           "channelCode": "1"
         },
         {
           "relayId": "rl02",
-          "deviceName": "Control 2",
+          "deviceName": "Dua",
           "channelCode": "2"
         },
         {
           "relayId": "rl03",
-          "deviceName": "Control 3",
+          "deviceName": "Tiga",
           "channelCode": "3"
         },
         {
           "relayId": "rl04",
-          "deviceName": "Control 4",
+          "deviceName": "Empat",
           "channelCode": "4"
         },
         {
@@ -30,6 +30,41 @@
           "deviceName": "On Air / Exit Switch",
           "channelCode": "switch",
           "isOnAirExit": true
+        },
+        {
+          "relayId": "rl05",
+          "deviceName": "Lima",
+          "channelCode": "5"
+        },
+        {
+          "relayId": "rl06",
+          "deviceName": "Enam",
+          "channelCode": "6"
+        },
+        {
+          "relayId": "rl07",
+          "deviceName": "Tujuh",
+          "channelCode": "7"
+        },
+        {
+          "relayId": "rl08",
+          "deviceName": "Delapan",
+          "channelCode": "8"
+        },
+        {
+          "relayId": "rl09",
+          "deviceName": "Sembilan",
+          "channelCode": "9"
+        },
+        {
+          "relayId": "rl10",
+          "deviceName": "Sepuluh",
+          "channelCode": "10"
+        },
+        {
+          "relayId": "rl11",
+          "deviceName": "Sebelas",
+          "channelCode": "11"
         }
       ],
       "onAirExitConnected": true

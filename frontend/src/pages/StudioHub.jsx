@@ -4,18 +4,18 @@ import { Button } from "@/components/ui/button";
 
 const categories = [
   {
-    id: "neon", label: "AMBIENT SYSTEM", title: "Kendali Lampu Neon",
-    desc: "Precision adjustment of decorative and ambient neon arrays including color temperature and pulse patterns.",
+    id: "neon", label: "AMBIENT SYSTEM", title: "Neon Light Control",
+    desc: "Precision setting of decorative and ambient neon.",
     icon: Waves, path: "/studio/neon", color: "#DA2C38",
   },
   {
-    id: "ac", label: "CLIMATE", title: "Kendali AC",
-    desc: "Manage air conditioning systems by room. Configure ESP relays for AC control.",
+    id: "ac", label: "TEMPERATURE", title: "AC Control",
+    desc: "Manage air conditioning systems by room.",
     icon: Snowflake, path: "/studio/ac", color: "#3B82F6",
   },
   {
-    id: "headlights", label: "CORE UTILITY", title: "Kendali Lampu Besar",
-    desc: "Master control for high-lumen overhead arrays designed for precision modeling.",
+    id: "headlights", label: "HEAD LIGHTS", title: "Headlight Control",
+    desc: "Controls For Main Lights In Studio Room",
     icon: Lamp, path: "/studio/headlights", color: "#DA2C38",
   },
 ];
@@ -27,7 +27,7 @@ export default function StudioHub() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1C2025]" style={{ fontFamily: 'Work Sans, sans-serif' }} data-testid="studio-hub-title">Studio Hub</h1>
-          <p className="text-sm text-[#637083] mt-1">Precision environmental controls for the architectural workspace. Monitor and manage lighting and climate systems.</p>
+          <p className="text-sm text-[#637083] mt-1">Precise studio environment control. Monitor and manage lighting and temperature systems.</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {categories.map((cat) => (

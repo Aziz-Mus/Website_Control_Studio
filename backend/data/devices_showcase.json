@@ -1,3 +1,14 @@
 {
-  "devices": []
+  "devices": [
+    {
+      "ip": "10.1.1.1",
+      "nama": "Pepe",
+      "kode": 1
+    },
+    {
+      "ip": "Kaku",
+      "nama": "10.1.1.2",
+      "kode": 2
+    }
+  ]
 }

@@ -26,15 +26,14 @@ export default function StudioHeadlightsRoom() {
   const [channelCode, setChannelCode] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
-  // Load relay statuses from localStorage (set by StudioHeadlights switch or previous session)
   const [relayStatuses, setRelayStatuses] = useState(() => loadStorage(STORAGE_KEY, {}));
 
-  // Persist relay statuses to localStorage
+  // Persist relay statuses to localStorage — StudioHeadlights reads this for card switch sync
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(relayStatuses)); }, [relayStatuses, STORAGE_KEY]);
 
   const fetchRoom = useCallback(async () => {
     try { const res = await axios.get(`${API}/studio/headlights/rooms/${roomId}`); setRoom(res.data.room); }
-    catch (e) { toast.error("Room tidak ditemukan"); navigate("/studio/headlights"); }
+    catch (e) { toast.error("Room not found"); navigate("/studio/headlights"); }
   }, [roomId, navigate]);
 
   useEffect(() => { fetchRoom(); }, [fetchRoom]);
@@ -49,24 +48,23 @@ export default function StudioHeadlightsRoom() {
     try {
       if (editingRelay) {
         await axios.put(`${API}/studio/headlights/rooms/${roomId}/relays/${editingRelay.relayId}`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
-        toast.success("Device berhasil diupdate");
+        toast.success("Device updated");
       } else {
         await axios.post(`${API}/studio/headlights/rooms/${roomId}/relays`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
-        toast.success(`Device "${deviceName}" ditambahkan`);
+        toast.success(`"${deviceName}" added`);
       }
       fetchRoom(); setDialogOpen(false);
-    } catch (e) { toast.error("Gagal menyimpan"); }
+    } catch (e) { toast.error("Failed to save device"); }
     setSaving(false);
   };
 
   const handleDelete = async (relayId) => {
     try {
       await axios.delete(`${API}/studio/headlights/rooms/${roomId}/relays/${relayId}`);
-      toast.success("Dihapus");
+      toast.success("Device deleted");
       setRelayStatuses(p => { const n = { ...p }; delete n[relayId]; return n; });
       fetchRoom();
-    }
-    catch (e) { toast.error("Gagal"); }
+    } catch (e) { toast.error("Failed to delete"); }
   };
 
   const controlRelays = async (relays, action) => {
@@ -78,14 +76,16 @@ export default function StudioHeadlightsRoom() {
       const res = await axios.post(ep, payload);
       const ns = {};
       res.data.rooms?.forEach(rm => rm.relays.forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; }));
+      // Update relay statuses — this automatically persists to localStorage via useEffect
+      // StudioHeadlights will recompute card switch state from this when page becomes visible
       setRelayStatuses(p => ({ ...p, ...ns }));
 
       const fc = Object.values(ns).filter(s => s === "failed").length;
       const sc = Object.values(ns).filter(s => s !== "failed").length;
-      if (fc > 0 && sc > 0) toast.warning(`${sc} berhasil, ${fc} device gagal`);
-      else if (fc > 0) toast.error(`${fc} device gagal`);
-      else toast.success("Berhasil");
-    } catch (e) { toast.error("Gagal"); }
+      if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} device(s) failed`);
+      else if (fc > 0) toast.error(`${fc} device(s) failed`);
+      else toast.success("Success");
+    } catch (e) { toast.error("Control failed"); }
     setLoading(false);
   };
 
@@ -95,8 +95,8 @@ export default function StudioHeadlightsRoom() {
   if (!room) return <div className="min-h-screen bg-[#F7F8F9] flex items-center justify-center text-[#637083]">Loading...</div>;
 
   const normalRelays = (room.relays || []).filter(r => !r.isOnAirExit);
-  const onCount = Object.values(relayStatuses).filter(s => s === "on").length;
-  const failedCount = Object.values(relayStatuses).filter(s => s === "failed").length;
+  const onCount = normalRelays.filter(r => relayStatuses[r.relayId] === "on").length;
+  const failedCount = normalRelays.filter(r => relayStatuses[r.relayId] === "failed").length;
   const totalCount = normalRelays.length;
   const powerLoad = totalCount > 0 ? Math.round((onCount / totalCount) * 100) : 0;
   const ms = totalCount === 0 ? "empty" : onCount === totalCount ? "all_active" : onCount > 0 || failedCount > 0 ? "partially_active" : "all_inactive";
@@ -126,7 +126,7 @@ export default function StudioHeadlightsRoom() {
               </Button>
             </div>
             {normalRelays.length === 0 ? (
-              <div className="text-center py-12 text-[#637083]" data-testid="hl-relays-empty"><Lamp className="w-12 h-12 mx-auto mb-3 text-[#D1D5DB]" strokeWidth={1.5} /><p className="text-sm">Belum ada headlight.</p></div>
+              <div className="text-center py-12 text-[#637083]" data-testid="hl-relays-empty"><Lamp className="w-12 h-12 mx-auto mb-3 text-[#D1D5DB]" strokeWidth={1.5} /><p className="text-sm">No headlights added yet.</p></div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                 {normalRelays.map((relay) => {
@@ -164,7 +164,6 @@ export default function StudioHeadlightsRoom() {
             )}
           </div>
           <div className="lg:w-72 space-y-4">
-            {/* Master Light Status panel - syncs with switch from StudioHeadlights */}
             <div className="bg-white border border-[#E5E7EB] rounded-md p-4 space-y-3" data-testid="hl-master-status">
               <h3 className="text-xs uppercase tracking-wider text-[#637083] font-medium" style={{ fontFamily: 'Work Sans, sans-serif' }}>Master Light Status</h3>
               <div className={`border rounded-md p-4 flex items-center gap-3 ${ms === "all_active" || ms === "partially_active" ? "border-[#DA2C38]" : "border-[#E5E7EB]"}`}>
@@ -188,11 +187,11 @@ export default function StudioHeadlightsRoom() {
       </div>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-md" data-testid="hl-device-dialog">
-          <DialogHeader><DialogTitle style={{ fontFamily: 'Work Sans, sans-serif' }}>{editingRelay ? "Edit Headlight" : "Tambah Headlight"}</DialogTitle><DialogDescription>Masukkan nama dan channel code.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle style={{ fontFamily: 'Work Sans, sans-serif' }}>{editingRelay ? "Edit Headlight" : "Add Headlight"}</DialogTitle><DialogDescription>Enter device name and channel code.</DialogDescription></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2"><Label>Nama Device</Label><Input data-testid="hl-device-name-input" value={deviceName} onChange={e => setDeviceName(e.target.value)} required /></div>
+            <div className="space-y-2"><Label>Device Name</Label><Input data-testid="hl-device-name-input" value={deviceName} onChange={e => setDeviceName(e.target.value)} required /></div>
             <div className="space-y-2"><Label>Channel Code</Label><Input data-testid="hl-device-channel-input" value={channelCode} onChange={e => setChannelCode(e.target.value)} required /></div>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-md">Batal</Button><Button type="submit" disabled={saving} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md" data-testid="hl-device-save-btn">{saving ? "Menyimpan..." : "Simpan"}</Button></DialogFooter>
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-md">Cancel</Button><Button type="submit" disabled={saving} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md" data-testid="hl-device-save-btn">{saving ? "Saving..." : "Save"}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
