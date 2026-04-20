@@ -115,12 +115,21 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
     drawHueBar();
   }, [drawHueBar]);
 
+  // Get pointer coords for both mouse and touch
+  const getEventCoords = (e) => {
+    if (e.touches && e.touches.length > 0) {
+      return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+    }
+    return { clientX: e.clientX, clientY: e.clientY };
+  };
+
   const handleCanvasInteraction = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const { clientX, clientY } = getEventCoords(e);
     const rect = canvas.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
     setSatPos({ x, y });
     const { r, g, b } = hsvToRgb(hue, x, 1 - y);
     updateFromRgb(r, g, b);
@@ -129,8 +138,9 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
   const handleHueInteraction = (e) => {
     const canvas = hueRef.current;
     if (!canvas) return;
+    const { clientX } = getEventCoords(e);
     const rect = canvas.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     setHue(x);
     const { r, g, b } = hsvToRgb(x, satPos.x, 1 - satPos.y);
     updateFromRgb(r, g, b);
@@ -141,15 +151,24 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
       if (isDragging.current) handleCanvasInteraction(e);
       if (isHueDragging.current) handleHueInteraction(e);
     };
-    const handleMouseUp = () => {
+    const handleTouchMove = (e) => {
+      e.preventDefault();
+      if (isDragging.current) handleCanvasInteraction(e);
+      if (isHueDragging.current) handleHueInteraction(e);
+    };
+    const handlePointerUp = () => {
       isDragging.current = false;
       isHueDragging.current = false;
     };
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mouseup", handlePointerUp);
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handlePointerUp);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mouseup", handlePointerUp);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handlePointerUp);
     };
   });
 
@@ -202,9 +221,10 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
           ref={canvasRef}
           width={240}
           height={160}
-          className="w-full h-40 rounded-md border border-[#E5E7EB] cursor-crosshair"
+          className="w-full h-40 rounded-md border border-[#E5E7EB] cursor-crosshair touch-none"
           data-testid="color-picker-canvas"
           onMouseDown={(e) => { isDragging.current = true; handleCanvasInteraction(e); }}
+          onTouchStart={(e) => { isDragging.current = true; handleCanvasInteraction(e); }}
         />
         <div
           className="absolute w-4 h-4 rounded-full border-2 border-white shadow-md pointer-events-none"
@@ -222,9 +242,10 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
           ref={hueRef}
           width={240}
           height={16}
-          className="w-full h-4 rounded-md cursor-pointer"
+          className="w-full h-4 rounded-md cursor-pointer touch-none"
           data-testid="hue-bar"
           onMouseDown={(e) => { isHueDragging.current = true; handleHueInteraction(e); }}
+          onTouchStart={(e) => { isHueDragging.current = true; handleHueInteraction(e); }}
         />
         <div
           className="absolute top-0 w-3 h-4 rounded-sm border-2 border-white shadow pointer-events-none"

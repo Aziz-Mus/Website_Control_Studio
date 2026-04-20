@@ -6,12 +6,12 @@ export default function Footer() {
       style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}
     >
       <span className="text-[#DA2C38] font-medium">INDONESIA INDICATOR</span>
-      <div className="flex gap-4 mt-2 sm:mt-0">
+      {/* <div className="flex gap-4 mt-2 sm:mt-0">
         <span>Privacy</span>
         <span>Terms</span>
         <span>Support</span>
-      </div>
-      <span className="mt-2 sm:mt-0">&copy; 2024 Indonesia Indicator</span>
+      </div> */}
+      <span className="mt-2 sm:mt-0">&copy; 2026 Indonesia Indicator</span>
     </footer>
   );
 }
