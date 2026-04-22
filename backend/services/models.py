@@ -13,9 +13,10 @@ class ColorModel(BaseModel):
     Blue: int = Field(..., ge=0, le=255)
 
 class ControlRequest(BaseModel):
-    Warna: Union[str, dict, ColorModel]
+    Warna: Optional[Union[str, dict, ColorModel]] = None  # None when using dynamic scene
     Kecerahan: int = Field(..., ge=0, le=255)
     KodeLampu: Optional[int] = None
+    SceneId: Optional[int] = Field(None, ge=1, le=35)  # WiZ dynamic scene ID (1-35)
 
 class DeviceCreate(BaseModel):
     ip: str
@@ -88,6 +89,8 @@ class ACTempAll(BaseModel):
 
 # --- Helpers ---
 def parse_warna(warna) -> ColorModel:
+    if warna is None:
+        return None
     if isinstance(warna, ColorModel):
         return warna
     if isinstance(warna, dict):

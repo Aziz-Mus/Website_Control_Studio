@@ -23,11 +23,14 @@ class WizService:
                     await asyncio.sleep(0.5)
         raise last_exception
 
-    async def turn_on(self, color: ColorModel = None, brightness: int = None):
+    async def turn_on(self, color: ColorModel = None, brightness: int = None, scene_id: int = None):
         async def _action():
             light = wizlight(self.ip_address)
             try:
-                if color and brightness is not None:
+                if scene_id is not None:
+                    pilot = PilotBuilder(scene=scene_id, brightness=brightness if brightness is not None else 128)
+                    await light.turn_on(pilot)
+                elif color and brightness is not None:
                     pilot = PilotBuilder(rgb=(color.Red, color.Green, color.Blue), brightness=brightness)
                     await light.turn_on(pilot)
                 else:
@@ -61,14 +64,15 @@ class WizService:
             return {"name": self.name, "ip": self.ip_address, "error": str(e)}
 
 
-async def control_wiz_light(ip: str, color: ColorModel, brightness: int) -> dict:
+async def control_wiz_light(ip: str, color: ColorModel, brightness: int, scene_id: int = None) -> dict:
     try:
         svc = WizService(ip, max_retries=5)
-        await svc.turn_on(color, brightness)
+        await svc.turn_on(color, brightness, scene_id=scene_id)
         return {"status": "success", "ip": ip}
     except Exception as e:
         logger.warning(f"Failed to control light at {ip}: {e}")
         return {"status": "failed", "ip": ip, "error": str(e)}
+
 
 async def turn_off_wiz_light(ip: str) -> dict:
     try:

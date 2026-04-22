@@ -31,21 +31,24 @@ logger = logging.getLogger(__name__)
 
 # ===================== NEON HELPERS =====================
 async def _neon_control(file: str, request: ControlRequest):
-    color = parse_warna(request.Warna)
+    scene_id = request.SceneId  # None for solid color, int for dynamic
+    color = parse_warna(request.Warna) if not scene_id else None
     devices = read_json(file)
     if request.KodeLampu is not None:
         target = next((d for d in devices if d["kode"] == request.KodeLampu), None)
         if not target:
             raise HTTPException(status_code=404, detail=f"Lampu kode {request.KodeLampu} tidak ditemukan")
-        result = await control_wiz_light(target["ip"], color, request.Kecerahan)
-        return {"status": result["status"], "data_sent": {"rgb": [color.Red, color.Green, color.Blue], "brightness": request.Kecerahan}, "device": {**target, **result}}
+        result = await control_wiz_light(target["ip"], color, request.Kecerahan, scene_id=scene_id)
+        data_info = {"scene_id": scene_id, "brightness": request.Kecerahan} if scene_id else {"rgb": [color.Red, color.Green, color.Blue], "brightness": request.Kecerahan}
+        return {"status": result["status"], "data_sent": data_info, "device": {**target, **result}}
     if not devices:
         return {"status": "no_devices"}
-    tasks = [control_wiz_light(d["ip"], color, request.Kecerahan) for d in devices]
+    tasks = [control_wiz_light(d["ip"], color, request.Kecerahan, scene_id=scene_id) for d in devices]
     results = await asyncio.gather(*tasks)
     report = [{**devices[i], **r} for i, r in enumerate(results)]
     sc = sum(1 for r in report if r["status"] == "success")
     return {"status": "success" if sc == len(report) else "partial_success" if sc > 0 else "failed", "summary": {"total": len(report), "success": sc, "failed": len(report) - sc}, "devices": report}
+
 
 async def _neon_turn_off(file: str):
     devices = read_json(file)

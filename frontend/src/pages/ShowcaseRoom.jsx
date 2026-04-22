@@ -64,10 +64,14 @@ export default function ShowcaseRoom() {
     else toast.success("All lights successful");
   };
 
-  const handleApplyColor = async ({ rgb, brightness: br }) => {
+  const handleApplyColor = async ({ rgb, brightness: br, sceneId, sceneName }) => {
     if (!devices.length) { toast.error("No lights configured"); return; }
     setLoading(true);
-    const payload = { Warna: { Red: rgb.r, Green: rgb.g, Blue: rgb.b }, Kecerahan: br || brightness };
+    // Build payload: scene mode takes priority over solid color
+    const payload = sceneId
+      ? { SceneId: sceneId, Kecerahan: br || brightness }
+      : { Warna: { Red: rgb.r, Green: rgb.g, Blue: rgb.b }, Kecerahan: br || brightness };
+    const successLabel = sceneId ? `"${sceneName}" scene applied` : "Color applied";
     try {
       if (selectedIds.length > 0 && selectedIds.length < devices.length) {
         const results = await Promise.allSettled(selectedIds.map(kode => axios.post(`${API}/showcase/lampu`, { ...payload, KodeLampu: kode })));
@@ -78,15 +82,16 @@ export default function ShowcaseRoom() {
         const sc = Object.values(ns).filter(s => s === "on").length;
         if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} failed`);
         else if (fc > 0) toast.error(`${fc} light(s) failed`);
-        else toast.success(`Applied to ${selectedIds.length} light(s)`);
+        else toast.success(`${successLabel} to ${selectedIds.length} light(s)`);
       } else {
         const res = await axios.post(`${API}/showcase/lampu`, payload);
         if (res.data.devices) updateStatusesFromResponse(res.data.devices, "on");
-        else toast.success("Applied to all lights");
+        else toast.success(`${successLabel} to all lights`);
       }
     } catch (e) { toast.error("Failed to reach server"); }
     setLoading(false);
   };
+
 
   const handleActivateAll = async () => {
     if (!devices.length) return; setLoading(true);
