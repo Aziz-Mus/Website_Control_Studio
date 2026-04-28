@@ -1,23 +1,25 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <WebServer.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 #include <ArduinoJson.h>
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
-#include <IRac.h> 
+#include <IRac.h>
 
 // --- WIFI CONFIG ---
-const char* ssid = "robotic-local"; 
-const char* password = "12345678";
+// const char* ssid = "IOT";
+// const char* password = "123456789";
+const char* ssid = "Indicator@IOT-Supp";
+const char* password = "!ndicator@2017";
 
-const uint16_t kIrLed = 4;     // Pin IR LED
-const uint16_t BUTTON_PIN = 0; // Tombol BOOT pada ESP32
+const uint16_t kIrLed = 4;     // Pin IR LED (D2 di Wemos/NodeMCU)
+const uint16_t BUTTON_PIN = 0; // Tombol BOOT/FLASH (D3 di Wemos/NodeMCU)
 
 IRac ac(kIrLed);
-WebServer server(80);
+ESP8266WebServer server(80);
 
 bool acState = false;      // Status Power (false = OFF, true = ON)
-bool lastButton = HIGH;    // Status terakhir tombol untuk deteksi tekanan
+bool lastButton = HIGH;    // Status terakhir tombol
 int currentTemp = 24;      // Suhu default awal
 
 void sendACCommand() {
@@ -29,7 +31,6 @@ void sendACCommand() {
   ac.next.degrees = currentTemp;
   ac.next.fanspeed = stdAc::fanspeed_t::kAuto;
 
-  // Memberikan info status ke Serial Monitor sesuai permintaan
   Serial.println("\n--- MENGIRIM SINYAL IR (HAIER 176) ---");
   Serial.print("Status Power : "); Serial.println(acState ? "ON" : "OFF");
   Serial.print("Suhu Target  : "); Serial.print(currentTemp); Serial.println(" C");
@@ -98,6 +99,8 @@ void setup() {
   Serial.println("\n[WIFI] WiFi connected.");
   Serial.print("[WIFI] IP address: ");
   Serial.println(WiFi.localIP());
+  Serial.print("[WIFI] IP address: ");
+  Serial.println(WiFi.macAddress());
 
   // Setup API Handlers
   server.on("/status", HTTP_GET, handleStatus);
@@ -105,10 +108,10 @@ void setup() {
   server.begin();
 
   Serial.println("\n======================================");
-  Serial.println("KONTROL AC HAIER CENTRAL (176-bit)");
+  Serial.println("KONTROL AC HAIER CENTRAL ESP8266");
   Serial.println("1. HTTP POST /control {\"power\":\"ON\",\"temperature\":24}");
   Serial.println("2. Tekan tombol BOOT untuk Power ON/OFF");
-  Serial.println("3. Ketik angka (16-30) di Serial untuk set suhu");
+  Serial.println("3. Ketik 'on', 'off', atau angka (16-30) di Serial untuk kontrol");
   Serial.println("======================================");
 }
 
@@ -123,29 +126,32 @@ void loop() {
   }
   lastButton = currentButton;
 
-  // 2. Logika Input Serial (Atur Suhu)
+  // 2. Logika Input Serial (Atur Suhu / Power)
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     input.trim();
 
-    if (input.length() > 0) {
+    if (input.equalsIgnoreCase("on")) {
+      acState = true;
+      sendACCommand();
+    } else if (input.equalsIgnoreCase("off")) {
+      acState = false;
+      sendACCommand();
+    } else if (input.length() > 0) {
       int newTemp = input.toInt();
-
-      // Validasi suhu standar AC
       if (newTemp >= 16 && newTemp <= 30) {
         currentTemp = newTemp;
         Serial.print(">> Input Suhu Diterima: ");
         Serial.print(currentTemp);
         Serial.println(" C");
 
-        // Jika AC sedang menyala, kirim update suhu langsung
         if (acState) {
           sendACCommand();
         } else {
           Serial.println("(Suhu disimpan, akan aktif saat AC dinyalakan)");
         }
       } else {
-        Serial.println("!! Error: Masukkan suhu antara 16 sampai 30.");
+        Serial.println("!! Error: Masukkan suhu antara 16 sampai 30, atau 'on' / 'off'.");
       }
     }
   }
