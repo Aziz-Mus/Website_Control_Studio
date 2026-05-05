@@ -1,11 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import {
   DndContext, DragOverlay, PointerSensor,
   useSensor, useSensors, useDroppable, useDraggable,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Lightbulb, AlertTriangle, Trash2, Pencil, Plus, List, Grid3X3, Settings2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Lightbulb, AlertTriangle, Trash2, Pencil, Plus } from "lucide-react";
 
 // ── Card sizes based on column count ────────────────────────────────────────
 const cardSizeClass = (cols) => {
@@ -15,7 +14,15 @@ const cardSizeClass = (cols) => {
   return { text: "text-[9px]", icon: "w-4 h-4", pad: "p-1.5" };
 };
 
-// ── Single device card ───────────────────────────────────────────────────────
+// Icon mode card dimensions — controls how big the card is inside the cell
+const iconCardSize = (cols) => {
+  if (cols <= 2) return { w: 90, h: 80, icon: "w-10 h-10" };   // card 44x44px, icon 24x24
+  if (cols <= 4) return { w: 84, h: 74, icon: "w-9 h-9" };   // card 38x38px, icon 20x20
+  if (cols <= 6) return { w: 78, h: 68, icon: "w-8 h-8" };   // card 32x32px, icon 16x16
+  return { w: 74, h: 64, icon: "w-7.5 h-7.5" };               // card 28x28px, icon 14x14
+};
+
+// ── Detailed device card ───────────────────────────────────────────────────────
 function DeviceCard({ device, isSelected, status, onToggle, onEdit, onDelete, sizes, dragging = false }) {
   const st = status || "idle";
   const bc = isSelected ? "border-[#DA2C38]" : "border-[#E5E7EB]";
@@ -31,13 +38,10 @@ function DeviceCard({ device, isSelected, status, onToggle, onEdit, onDelete, si
           <AlertTriangle className="w-2.5 h-2.5 text-[#F59E0B]" />
         </div>
       )}
-      <div className={`flex flex-col items-center justify-center h-full p-1.5 gap-0.5`}>
-        {/* Top: Icon */}
+      <div className="flex flex-col items-center justify-center h-full p-1.5 gap-0.5">
         <div className={`${bg} rounded-md p-1.5`}>
           <Lightbulb className={`${sizes.icon} ${st === "on" ? "text-[#DA2C38]" : st === "failed" ? "text-[#F59E0B]" : isSelected ? "text-[#DA2C38]" : "text-[#637083]"}`} strokeWidth={1.5} />
         </div>
-        
-        {/* Center: Info */}
         <div className="w-full flex flex-col items-center justify-center overflow-hidden">
           <p className={`${sizes.text} font-bold text-[#1C2025] truncate w-full text-center leading-normal px-1`} title={device.nama}>
             {device.nama}
@@ -48,8 +52,6 @@ function DeviceCard({ device, isSelected, status, onToggle, onEdit, onDelete, si
             </p>
           )}
         </div>
-
-        {/* Bottom: Status */}
         <div className="flex items-center gap-1">
           <div className={`w-1 h-1 rounded-full ${st === "on" ? "bg-[#10B981]" : st === "failed" ? "bg-[#F59E0B]" : "bg-[#D1D5DB]"}`} />
           <span className="text-[9px] font-bold tracking-tight text-[#637083]">
@@ -57,7 +59,6 @@ function DeviceCard({ device, isSelected, status, onToggle, onEdit, onDelete, si
           </span>
         </div>
       </div>
-      {/* Edit/Delete — visible on hover */}
       <div className="absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-20"
         onClick={e => e.stopPropagation()}>
         {onEdit && <button className="p-0.5 rounded hover:bg-blue-50" onClick={() => onEdit(device)}>
@@ -66,6 +67,33 @@ function DeviceCard({ device, isSelected, status, onToggle, onEdit, onDelete, si
         <button className="p-0.5 rounded hover:bg-red-50" onClick={() => onDelete(device.kode)}>
           <Trash2 className="w-2.5 h-2.5 text-[#637083]" strokeWidth={1.5} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Icon-only device card — compact, centered in cell ──────────────────────
+function IconOnlyCard({ device, isSelected, status, onToggle, cols, dragging = false }) {
+  const st = status || "idle";
+  const bc = isSelected ? "border-[#DA2C38]" : "border-transparent";
+  const bg = st === "on" ? "bg-red-50" : st === "failed" ? "bg-yellow-50" : isSelected ? "bg-red-50" : "bg-gray-50";
+  const card = iconCardSize(cols);
+
+  return (
+    <div
+      className="relative flex items-center justify-center w-full h-full cursor-pointer select-none"
+      onClick={() => !dragging && onToggle?.(device.kode)}
+    >
+      {st === "failed" && (
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-10">
+          <AlertTriangle className="w-2 h-2 text-[#F59E0B]" />
+        </div>
+      )}
+      <div
+        className={`flex items-center justify-center rounded-lg border-2 ${bc} ${bg} transition-colors ${dragging ? "opacity-50 shadow-2xl scale-110" : "hover:shadow-sm"}`}
+        style={{ width: card.w, height: card.h }}
+      >
+        <Lightbulb className={`${card.icon} ${st === "on" ? "text-[#DA2C38]" : st === "failed" ? "text-[#F59E0B]" : isSelected ? "text-[#DA2C38]" : "text-[#637083]"}`} strokeWidth={1.5} />
       </div>
     </div>
   );
@@ -100,20 +128,22 @@ export default function DeviceModuleGrid({
   devices = [],
   selectedIds = [],
   deviceStatuses = {},
-  viewMode = "list",           // "list" | "grid"
+  viewMode = "list",
   gridConfig = { cols: 4, rows: 5 },
-  gridLayout = {},             // { [cellIdx]: kode }
-  gridMode = "control",        // "edit" | "control"  (grid only)
+  gridLayout = {},
+  gridMode = "control",
+  displayMode = "detailed",
   onToggleSelect,
   onDelete,
   onEdit,
-  onAddAtCell,                 // (cellIdx) => void
-  onLayoutChange,              // (newLayout) => void
-  onViewModeChange,            // (mode) => void
-  onGridModeChange,            // (mode) => void
-  onGridConfigOpen,            // () => void — open the config dialog
+  onAddAtCell,
+  onLayoutChange,
+  onViewModeChange,
+  onGridModeChange,
+  onGridConfigOpen,
+  onDisplayModeChange,
 }) {
-  const [activeId, setActiveId] = useState(null); // dragged cell idx
+  const [activeId, setActiveId] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -121,10 +151,6 @@ export default function DeviceModuleGrid({
 
   const sizes = cardSizeClass(gridConfig.cols);
   const kodeMap = Object.fromEntries(devices.map(d => [d.kode, d]));
-
-  // Build inverse: kode → cellIdx
-  const kodeToCell = {};
-  Object.entries(gridLayout).forEach(([ci, kode]) => { kodeToCell[kode] = ci; });
 
   const handleDragStart = ({ active }) => setActiveId(active.id);
 
@@ -148,6 +174,33 @@ export default function DeviceModuleGrid({
 
   const activeDragKode = activeId !== null ? gridLayout[activeId] : null;
   const activeDragDevice = activeDragKode ? kodeMap[activeDragKode] : null;
+
+  const renderCard = (device, extraProps = {}) => {
+    if (displayMode === "icon") {
+      return (
+        <IconOnlyCard
+          device={device}
+          isSelected={selectedIds.includes(device.kode)}
+          status={deviceStatuses[device.kode]}
+          onToggle={onToggleSelect}
+          cols={gridConfig.cols}
+          {...extraProps}
+        />
+      );
+    }
+    return (
+      <DeviceCard
+        device={device}
+        isSelected={selectedIds.includes(device.kode)}
+        status={deviceStatuses[device.kode]}
+        onToggle={onToggleSelect}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        sizes={sizes}
+        {...extraProps}
+      />
+    );
+  };
 
   // ── LIST MODE ──────────────────────────────────────────────────────────────
   if (viewMode === "list") {
@@ -182,93 +235,81 @@ export default function DeviceModuleGrid({
   // ── GRID TABLE MODE ────────────────────────────────────────────────────────
   const { cols, rows } = gridConfig;
   const totalCells = cols * rows;
-  const cellH = Math.max(100, Math.min(160, Math.round(150 - cols * 6)));
+  const isIconMode = displayMode === "icon";
+
+  // Cell dimensions
+  const cellMinW = isIconMode ? 80 : 100;   // min-width per cell (for mobile scroll)
+  const cellH = isIconMode
+    ? Math.max(50, Math.min(80, Math.round(80 - cols * 2)))
+    : Math.max(100, Math.min(160, Math.round(150 - cols * 6)));
+
+  // Padding inside each cell — icon mode has more margin
+  const cellPadding = isIconMode ? "30%" : "6px";
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      {/* Grid table */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gap: 0,
-          border: "1px solid #E5E7EB",
-          borderRadius: 8,
-          overflow: "hidden",
-        }}
-      >
-        {Array.from({ length: totalCells }).map((_, cellIdx) => {
-          const kode   = gridLayout[String(cellIdx)];
-          const device = kode !== undefined ? kodeMap[kode] : null;
-          const hasDevice = device !== null && device !== undefined;
+      {/* Horizontal scroll wrapper for mobile when cols > 4 */}
+      <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${cols}, minmax(${cellMinW}px, 1fr))`,
+            gap: 0,
+            border: "1px solid #E5E7EB",
+            borderRadius: 8,
+            overflow: "hidden",
+            minWidth: cols > 4 ? `${cols * cellMinW}px` : undefined,
+          }}
+        >
+          {Array.from({ length: totalCells }).map((_, cellIdx) => {
+            const kode   = gridLayout[String(cellIdx)];
+            const device = kode !== undefined ? kodeMap[kode] : null;
+            const hasDevice = device !== null && device !== undefined;
 
-          return (
-            <DroppableCell key={cellIdx} cellIdx={cellIdx}>
-              <div style={{
-                height: cellH,
-                borderRight: (cellIdx % cols) !== cols - 1 ? "1px solid #E5E7EB" : "none",
-                borderBottom: Math.floor(cellIdx / cols) !== rows - 1 ? "1px solid #E5E7EB" : "none",
-                padding: 6,
-                boxSizing: "border-box",
-              }}>
-                {hasDevice ? (
-                  gridMode === "edit" ? (
-                    <DraggableCard cellIdx={cellIdx}>
+            return (
+              <DroppableCell key={cellIdx} cellIdx={cellIdx}>
+                <div style={{
+                  height: cellH,
+                  borderRight: (cellIdx % cols) !== cols - 1 ? "1px solid #E5E7EB" : "none",
+                  borderBottom: Math.floor(cellIdx / cols) !== rows - 1 ? "1px solid #E5E7EB" : "none",
+                  padding: cellPadding,
+                  boxSizing: "border-box",
+                }}>
+                  {hasDevice ? (
+                    gridMode === "edit" ? (
+                      <DraggableCard cellIdx={cellIdx}>
+                        <div className="group" style={{ height: "100%" }}>
+                          {renderCard(device)}
+                        </div>
+                      </DraggableCard>
+                    ) : (
                       <div className="group" style={{ height: "100%" }}>
-                        <DeviceCard
-                          device={device}
-                          isSelected={selectedIds.includes(device.kode)}
-                          status={deviceStatuses[device.kode]}
-                          onToggle={onToggleSelect}
-                          onEdit={onEdit}
-                          onDelete={onDelete}
-                          sizes={sizes}
-                        />
+                        {renderCard(device)}
                       </div>
-                    </DraggableCard>
+                    )
                   ) : (
-                    <div className="group" style={{ height: "100%" }}>
-                      <DeviceCard
-                        device={device}
-                        isSelected={selectedIds.includes(device.kode)}
-                        status={deviceStatuses[device.kode]}
-                        onToggle={onToggleSelect}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                        sizes={sizes}
-                      />
-                    </div>
-                  )
-                ) : (
-                  /* Empty cell */
-                  gridMode === "edit" ? (
-                    <button
-                      className="w-full h-full rounded-md border-2 border-dashed border-[#E5E7EB] flex items-center justify-center text-[#D1D5DB] hover:border-[#DA2C38] hover:text-[#DA2C38] transition-colors"
-                      onClick={() => onAddAtCell?.(cellIdx)}
-                    >
-                      <Plus className="w-5 h-5" />
-                    </button>
-                  ) : (
-                    <div className="w-full h-full rounded-md bg-[#FAFAFA]" />
-                  )
-                )}
-              </div>
-            </DroppableCell>
-          );
-        })}
+                    gridMode === "edit" ? (
+                      <button
+                        className="w-full h-full rounded-md border-2 border-dashed border-[#E5E7EB] flex items-center justify-center text-[#D1D5DB] hover:border-[#DA2C38] hover:text-[#DA2C38] transition-colors"
+                        onClick={() => onAddAtCell?.(cellIdx)}
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    ) : (
+                      <div className="w-full h-full rounded-md bg-[#FAFAFA]" />
+                    )
+                  )}
+                </div>
+              </DroppableCell>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Drag overlay — floating ghost card */}
       <DragOverlay>
         {activeDragDevice ? (
           <div style={{ width: 100, height: cellH, opacity: 0.9 }}>
-            <DeviceCard
-              device={activeDragDevice}
-              isSelected={selectedIds.includes(activeDragDevice.kode)}
-              status={deviceStatuses[activeDragDevice.kode]}
-              sizes={sizes}
-              dragging
-            />
+            {renderCard(activeDragDevice, { dragging: true })}
           </div>
         ) : null}
       </DragOverlay>

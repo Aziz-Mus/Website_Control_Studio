@@ -19,9 +19,16 @@ const STORAGE_KEY  = "cc_device_statuses";
 const SELECTED_KEY = "cc_selected_ids";
 const VIEW_KEY     = "cc_view_mode";
 const GRIDMODE_KEY = "cc_grid_mode";
+const GRIDCONFIG_KEY = "cc_grid_config";
+const GRIDLAYOUT_KEY = "cc_grid_layout";
+const DISPLAY_KEY    = "cc_display_mode";
 
 function loadStorage(key, fallback) {
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+  try {
+    const v = localStorage.getItem(key);
+    if (v === null || v === undefined) return fallback;
+    try { return JSON.parse(v); } catch { return v; } // handle raw (non-JSON) strings
+  } catch { return fallback; }
 }
 
 export default function CommandCenter() {
@@ -33,9 +40,10 @@ export default function CommandCenter() {
 
   // ── View mode ─────────────────────────────────────────────────────────────
   const [viewMode, setViewMode]       = useState(() => loadStorage(VIEW_KEY, "list"));
-  const [gridConfig, setGridConfig]   = useState({ cols: 4, rows: 5 });
-  const [gridLayout, setGridLayout]   = useState({});
+  const [gridConfig, setGridConfig]   = useState(() => loadStorage(GRIDCONFIG_KEY, { cols: 4, rows: 5 }));
+  const [gridLayout, setGridLayout]   = useState(() => loadStorage(GRIDLAYOUT_KEY, {}));
   const [gridMode, setGridMode]       = useState(() => loadStorage(GRIDMODE_KEY, "control"));
+  const [displayMode, setDisplayMode] = useState(() => loadStorage(DISPLAY_KEY, "detailed"));
   const [configOpen, setConfigOpen]   = useState(false);
 
   // ── Dialogs ───────────────────────────────────────────────────────────────
@@ -54,22 +62,33 @@ export default function CommandCenter() {
   const [animations, setAnimations]     = useState([]);
 
   // ── Persist ───────────────────────────────────────────────────────────────
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
-  useEffect(() => { localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedIds)); }, [selectedIds]);
-  useEffect(() => { localStorage.setItem(VIEW_KEY, viewMode); }, [viewMode]);
-  useEffect(() => { localStorage.setItem(GRIDMODE_KEY, gridMode); }, [gridMode]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEY,    JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
+  useEffect(() => { localStorage.setItem(SELECTED_KEY,   JSON.stringify(selectedIds)); },   [selectedIds]);
+  useEffect(() => { localStorage.setItem(VIEW_KEY,        JSON.stringify(viewMode)); },      [viewMode]);
+  useEffect(() => { localStorage.setItem(GRIDMODE_KEY,    JSON.stringify(gridMode)); },      [gridMode]);
+  useEffect(() => { localStorage.setItem(GRIDCONFIG_KEY, JSON.stringify(gridConfig)); },    [gridConfig]);
+  useEffect(() => { localStorage.setItem(GRIDLAYOUT_KEY, JSON.stringify(gridLayout)); },    [gridLayout]);
+  useEffect(() => { localStorage.setItem(DISPLAY_KEY,    JSON.stringify(displayMode)); },   [displayMode]);
 
   // ── Fetch devices ─────────────────────────────────────────────────────────
   const fetchDevices = useCallback(async () => {
     try { const r = await axios.get(`${BASE}/devices`); setDevices(r.data.devices || []); } catch (e) { console.error(e); }
   }, []);
 
-  // ── Fetch grid layout ─────────────────────────────────────────────────────
+  // ── Fetch grid layout (only config, don't overwrite localStorage viewMode) ─
   const fetchGridLayout = useCallback(async () => {
     try {
       const r = await axios.get(`${BASE}/grid-layout`);
-      setGridConfig({ cols: r.data.cols, rows: r.data.rows });
-      setGridLayout(r.data.cells || {});
+      setGridConfig(prev => {
+        const server = { cols: r.data.cols, rows: r.data.rows };
+        // Use localStorage if available, otherwise server
+        const stored = loadStorage(GRIDCONFIG_KEY, null);
+        return stored || server;
+      });
+      setGridLayout(prev => {
+        const stored = loadStorage(GRIDLAYOUT_KEY, null);
+        return (stored && Object.keys(stored).length > 0) ? stored : (r.data.cells || {});
+      });
     } catch (e) { console.error(e); }
   }, []);
 
@@ -99,11 +118,22 @@ export default function CommandCenter() {
       const r = await axios.post(`${BASE}/devices`, { ip, nama });
       toast.success(`"${nama}" added`);
       await fetchDevices();
-      // If added from a cell, place it there automatically
-      if (pendingCellIdx !== null && r.data.device) {
-        const newLayout = { ...gridLayout, [String(pendingCellIdx)]: r.data.device.kode };
-        setGridLayout(newLayout);
-        saveGridLayout(newLayout);
+      // Place it in the grid automatically
+      if (r.data.device) {
+        let cellIdx = pendingCellIdx;
+        if (cellIdx === null) {
+          // Find first empty cell
+          const usedIndices = new Set(Object.keys(gridLayout).map(Number));
+          const totalCells = gridConfig.cols * gridConfig.rows;
+          const found = Array.from({ length: totalCells }).findIndex((_, i) => !usedIndices.has(i));
+          if (found !== -1) cellIdx = found;
+        }
+
+        if (cellIdx !== null) {
+          const newLayout = { ...gridLayout, [String(cellIdx)]: r.data.device.kode };
+          setGridLayout(newLayout);
+          saveGridLayout(newLayout);
+        }
         setPendingCellIdx(null);
       }
     } catch (e) { toast.error("Failed to add light"); }
@@ -143,12 +173,39 @@ export default function CommandCenter() {
   };
 
   const handleGridConfigConfirm = async ({ cols, rows }) => {
-    // Auto-populate empty layout with devices in order
     const newConfig = { cols, rows };
+    const totalCells = cols * rows;
+
+    // Preserve existing positions — only move devices that fall outside new grid
     const newLayout = {};
-    devices.forEach((d, i) => {
-      if (i < cols * rows) newLayout[String(i)] = d.kode;
+    const overflowKodes = [];
+
+    // First pass: keep devices that fit in the new grid
+    Object.entries(gridLayout).forEach(([cellIdx, kode]) => {
+      const idx = Number(cellIdx);
+      if (idx < totalCells) {
+        newLayout[cellIdx] = kode;
+      } else {
+        overflowKodes.push(kode);
+      }
     });
+
+    // Second pass: place overflow devices AND missing devices into empty cells
+    const kodesCurrentlyIn = new Set(Object.values(newLayout).concat(overflowKodes));
+    const missingKodes = devices.map(d => d.kode).filter(k => !kodesCurrentlyIn.has(k));
+    const toPlace = [...overflowKodes, ...missingKodes];
+
+    if (toPlace.length > 0) {
+      const usedCells = new Set(Object.keys(newLayout).map(Number));
+      for (const kode of toPlace) {
+        const emptyIdx = Array.from({ length: totalCells }).findIndex((_, i) => !usedCells.has(i));
+        if (emptyIdx !== -1) {
+          newLayout[String(emptyIdx)] = kode;
+          usedCells.add(emptyIdx);
+        }
+      }
+    }
+
     setGridConfig(newConfig);
     setGridLayout(newLayout);
     try { await axios.put(`${BASE}/grid-layout`, { ...newConfig, cells: newLayout }); }
@@ -168,17 +225,41 @@ export default function CommandCenter() {
   };
   const handleApplySel = (sel) => {
     const valid = (sel.kodes || []).filter(k => devices.some(d => d.kode === k));
-    setSelectedIds(valid);
-    toast.success(`"${sel.name}" applied — ${valid.length} device(s) selected`);
+    if (sel._action === "deselect") {
+      // Remove only the kodes from this selection
+      setSelectedIds(prev => prev.filter(id => !valid.includes(id)));
+      toast.success(`"${sel.name}" deselected — ${valid.length} device(s) removed`);
+    } else {
+      // Add kodes from this selection to current selection (preventing duplicates)
+      setSelectedIds(prev => Array.from(new Set([...prev, ...valid])));
+      toast.success(`"${sel.name}" added — ${valid.length} device(s) added to selection`);
+    }
   };
 
   // ── Light control helpers ─────────────────────────────────────────────────
-  const updateFromResponse = (report, action) => {
+  // Build ip→kode lookup for mapping control results back to device kodes
+  const ipToKode = Object.fromEntries(devices.map(d => [d.ip, d.kode]));
+
+  // Handles both response formats:
+  //   /control  → { results: [{ ip, success }] }
+  //   /turn-off → { devices: [{ kode, status }] }
+  //   /lampu    → { devices: [{ kode, status }] }
+  const updateFromControlResponse = (data, action) => {
     const ns = {};
-    report.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; });
+    if (data.devices) {
+      // Format: { devices: [{ kode, status: "success"/"failed" }] }
+      data.devices.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; });
+    } else if (data.results) {
+      // Format: { results: [{ ip, success: true/false }] }
+      data.results.forEach(r => {
+        const kode = ipToKode[r.ip];
+        if (kode !== undefined) ns[kode] = r.success ? action : "failed";
+      });
+    }
     setDeviceStatuses(p => ({ ...p, ...ns }));
-    const fc = report.filter(d => d.status !== "success").length;
-    const sc = report.filter(d => d.status === "success").length;
+
+    const fc = Object.values(ns).filter(s => s === "failed").length;
+    const sc = Object.values(ns).filter(s => s !== "failed").length;
     if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} failed`);
     else if (fc > 0) toast.error(`${fc} failed`);
     else toast.success("All lights successful");
@@ -207,8 +288,7 @@ export default function CommandCenter() {
       : { action: "on", ips, rgb: colorA, brightness: br100 };
     try {
       const r = await axios.post(`${BASE}/control`, payload);
-      if (r.data.devices) updateFromResponse(r.data.devices, "on");
-      else toast.success("Color applied");
+      updateFromControlResponse(r.data, "on");
     } catch (e) { toast.error("Failed"); }
     setLoading(false);
   };
@@ -230,7 +310,7 @@ export default function CommandCenter() {
       const r = await axios.post(`${BASE}/control`, {
         action: "on", ips, rgb, brightness: br,        // send 0-100 directly
       });
-      if (r.data.devices) updateFromResponse(r.data.devices, "on");
+      updateFromControlResponse(r.data, "on");
     } catch (e) { toast.error("Failed to apply preset"); }
   };
 
@@ -262,7 +342,7 @@ export default function CommandCenter() {
     if (!devices.length) return; setLoading(true);
     try {
       const r = await axios.post(`${BASE}/control`, { action: "color", ips: devices.map(d => d.ip), rgb: [255,255,255], brightness });
-      if (r.data.devices) updateFromResponse(r.data.devices, "on");
+      updateFromControlResponse(r.data, "on");
     } catch (e) { toast.error("Failed"); }
     setLoading(false);
   };
@@ -270,7 +350,7 @@ export default function CommandCenter() {
     if (!devices.length) return; setLoading(true);
     try {
       const r = await axios.post(`${BASE}/turn-off`);
-      if (r.data.devices) updateFromResponse(r.data.devices, "off");
+      updateFromControlResponse(r.data, "off");
     } catch (e) { toast.error("Failed"); }
     setLoading(false);
   };
@@ -280,7 +360,7 @@ export default function CommandCenter() {
 
   return (
     <div className="min-h-screen bg-[#F7F8F9]" data-testid="command-center-page">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -300,10 +380,10 @@ export default function CommandCenter() {
         </div>
 
         {/* ── Main layout ──────────────────────────────────────────────────── */}
-        <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex flex-col lg:flex-row gap-6 lg:items-start w-full">
 
           {/* Left: Module Grid */}
-          <div className="flex-1">
+          <div className="flex-1 w-full">
             {/* Grid toolbar */}
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h2 className="text-sm font-semibold text-[#1C2025] uppercase tracking-wider"
@@ -336,6 +416,25 @@ export default function CommandCenter() {
                     className="rounded-md text-xs border-[#E5E7EB]">
                     <Settings2 className="w-3.5 h-3.5 mr-1" />{gridConfig.cols}×{gridConfig.rows}
                   </Button>
+                  {/* Show Detail toggle — pill style */}
+                  <button
+                    onClick={() => setDisplayMode(displayMode === "detailed" ? "icon" : "detailed")}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all select-none ${
+                      displayMode === "detailed"
+                        ? "bg-[#1C2025] border-[#1C2025] text-white"
+                        : "border-[#E5E7EB] text-[#637083] hover:bg-[#F3F4F6]"
+                    }`}
+                  >
+                    {/* Pill switch */}
+                    <span className={`relative inline-flex items-center w-7 h-4 rounded-full transition-colors flex-shrink-0 ${
+                      displayMode === "detailed" ? "bg-[#DA2C38]" : "bg-[#D1D5DB]"
+                    }`}>
+                      <span className={`absolute w-3 h-3 rounded-full bg-white shadow transition-transform ${
+                        displayMode === "detailed" ? "translate-x-3.5" : "translate-x-0.5"
+                      }`} />
+                    </span>
+                    Detail
+                  </button>
                 </>}
 
                 {/* Select All / Add Light */}
@@ -366,12 +465,14 @@ export default function CommandCenter() {
               onLayoutChange={handleLayoutChange}
               onViewModeChange={setViewMode}
               onGridModeChange={setGridMode}
+              displayMode={displayMode}
+              onDisplayModeChange={setDisplayMode}
               onGridConfigOpen={() => setConfigOpen(true)}
             />
           </div>
 
-          {/* Right: Control panels */}
-          <div className="lg:w-80 space-y-4 lg:sticky lg:top-6 lg:self-start">
+          {/* Right: Control + Status + Saved Selections — sticky */}
+          <div className="w-full lg:w-80 space-y-4 lg:sticky lg:top-20 lg:self-start">
             <ControlPanel
               selectedCount={selectedIds.length}
               tab={controlTab}
@@ -424,6 +525,7 @@ export default function CommandCenter() {
         open={configOpen}
         onOpenChange={setConfigOpen}
         initial={gridConfig}
+        deviceCount={devices.length}
         onConfirm={handleGridConfigConfirm}
       />
     </div>
