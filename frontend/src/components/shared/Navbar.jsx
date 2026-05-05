@@ -18,6 +18,7 @@ export default function Navbar() {
 
   const isStudio = location.pathname.startsWith("/studio");
   const isShowcase = location.pathname.startsWith("/showcase");
+  const isCC = location.pathname.startsWith("/command-center");
 
   // Close mobile menu on every route change
   useEffect(() => {
@@ -102,6 +103,18 @@ export default function Navbar() {
         {/* Center: Nav links — desktop only */}
         <div className="hidden md:flex flex-1 justify-center gap-8">
           <button
+            data-testid="nav-command-center"
+            onClick={() => navigate("/command-center")}
+            className={`text-sm font-medium tracking-wide transition-colors pb-0.5 ${
+              isCC
+                ? "text-[#DA2C38] border-b-2 border-[#DA2C38]"
+                : "text-[#637083] hover:text-[#1C2025]"
+            }`}
+            style={{ fontFamily: "Work Sans, sans-serif" }}
+          >
+            Command Center
+          </button>
+          <button
             data-testid="nav-studio"
             onClick={handleStudioClick}
             className={`text-sm font-medium tracking-wide transition-colors pb-0.5 ${
@@ -126,6 +139,7 @@ export default function Navbar() {
             Showcase Room
           </button>
         </div>
+
 
         {/* Right: On Air/Exit + Hamburger */}
         <div className="flex items-center gap-2 ml-auto" data-testid="onair-exit-area">
@@ -166,7 +180,7 @@ export default function Navbar() {
         className={`
           md:hidden bg-white border-b border-[#E5E7EB] shadow-lg
           overflow-hidden transition-all duration-200 ease-in-out
-          ${mobileMenuOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"}
+          ${mobileMenuOpen ? "max-h-64 opacity-100" : "max-h-0 opacity-0"}
         `}
       >
         <div className="flex flex-col py-1">
@@ -193,6 +207,18 @@ export default function Navbar() {
             style={{ fontFamily: "Work Sans, sans-serif" }}
           >
             Showcase Room
+          </button>
+          <button
+            data-testid="mobile-nav-command-center"
+            onClick={() => navigate("/command-center")}
+            className={`flex items-center px-6 py-4 text-sm font-medium tracking-wide transition-colors text-left ${
+              isCC
+                ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
+                : "text-[#637083] hover:text-[#1C2025] hover:bg-gray-50"
+            }`}
+            style={{ fontFamily: "Work Sans, sans-serif" }}
+          >
+            Command Center
           </button>
         </div>
       </div>

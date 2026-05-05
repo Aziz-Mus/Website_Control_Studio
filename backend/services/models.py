@@ -99,3 +99,42 @@ def parse_warna(warna) -> ColorModel:
         data = json.loads(warna)
         return ColorModel(**data)
     raise ValueError("Format Warna tidak valid")
+
+
+# ─── Command Center Models ────────────────────────────────────────────────────
+
+class CCControlRequest(BaseModel):
+    """Control one or more Command Center ceiling lights."""
+    ips: List[str]
+    action: str = "on"          # "on" | "off"
+    brightness: Optional[int] = Field(None, ge=0, le=100)   # 0-100 (%)
+    rgb: Optional[List[int]] = None          # [R, G, B] 0-255 each
+    colortemp: Optional[int] = Field(None, ge=2200, le=6500)  # Kelvin
+
+
+class CCAnimFrame(BaseModel):
+    """One frame in an animation sequence."""
+    rgb: Optional[List[int]] = None
+    colortemp: Optional[int] = Field(None, ge=2200, le=6500)
+    brightness: Optional[int] = Field(None, ge=0, le=100)
+
+
+class CCAnimStartRequest(BaseModel):
+    """Start an animation loop on selected lights."""
+    name: str = "Custom"
+    ips: List[str]
+    interval: float = Field(2.0, ge=0.1, le=60.0)  # seconds between frames
+    frames: List[CCAnimFrame]
+
+
+class CCPresetCreate(BaseModel):
+    """Save a new quick preset."""
+    name: str
+    settings: dict   # { is_on, brightness, rgb?, colortemp? }
+
+
+class CCAnimationCreate(BaseModel):
+    """Save a custom animation."""
+    name: str
+    frames: List[CCAnimFrame]
+
