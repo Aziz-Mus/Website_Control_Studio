@@ -89,15 +89,15 @@ export default function StudioHeadlightsRoom() {
     setLoading(false);
   };
 
-  const handleActivateAll = () => { const normal = (room?.relays || []).filter(r => !r.isOnAirExit); controlRelays(normal, "on"); };
-  const handleDeactivateAll = () => { const normal = (room?.relays || []).filter(r => !r.isOnAirExit); controlRelays(normal, "off"); };
+  const handleActivateAll = () => { controlRelays(room?.relays || [], "on"); };
+  const handleDeactivateAll = () => { controlRelays(room?.relays || [], "off"); };
 
   if (!room) return <div className="min-h-screen bg-[#F7F8F9] flex items-center justify-center text-[#637083]">Loading...</div>;
 
-  const normalRelays = (room.relays || []).filter(r => !r.isOnAirExit);
-  const onCount = normalRelays.filter(r => relayStatuses[r.relayId] === "on").length;
-  const failedCount = normalRelays.filter(r => relayStatuses[r.relayId] === "failed").length;
-  const totalCount = normalRelays.length;
+  const relays = room.relays || [];
+  const onCount = relays.filter(r => relayStatuses[r.relayId] === "on").length;
+  const failedCount = relays.filter(r => relayStatuses[r.relayId] === "failed").length;
+  const totalCount = relays.length;
   const powerLoad = totalCount > 0 ? Math.round((onCount / totalCount) * 100) : 0;
   const ms = totalCount === 0 ? "empty" : onCount === totalCount ? "all_active" : onCount > 0 || failedCount > 0 ? "partially_active" : "all_inactive";
 
@@ -110,11 +110,11 @@ export default function StudioHeadlightsRoom() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1C2025]" style={{ fontFamily: 'Work Sans, sans-serif' }} data-testid="hl-room-title">{room.roomName}</h1>
-            <p className="text-sm text-[#637083] mt-1">ESP: {room.espIpAddress} &middot; {normalRelays.length} headlight(s)</p>
+            <p className="text-sm text-[#637083] mt-1">ESP: {room.espIpAddress} &middot; {relays.length} headlight(s)</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs" onClick={handleActivateAll} disabled={loading || normalRelays.length === 0} data-testid="hl-activate-all-btn">ACTIVATE ALL</Button>
-            <Button variant="outline" className="border-[#DA2C38] text-[#DA2C38] hover:bg-red-50 rounded-md text-xs" onClick={handleDeactivateAll} disabled={loading || normalRelays.length === 0} data-testid="hl-deactivate-all-btn">DEACTIVATE ALL</Button>
+            <Button className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs" onClick={handleActivateAll} disabled={loading || relays.length === 0} data-testid="hl-activate-all-btn">ACTIVATE ALL</Button>
+            <Button variant="outline" className="border-[#DA2C38] text-[#DA2C38] hover:bg-red-50 rounded-md text-xs" onClick={handleDeactivateAll} disabled={loading || relays.length === 0} data-testid="hl-deactivate-all-btn">DEACTIVATE ALL</Button>
           </div>
         </div>
         <div className="flex flex-col lg:flex-row gap-6">
@@ -125,11 +125,11 @@ export default function StudioHeadlightsRoom() {
                 <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={2} />Add Headlight
               </Button>
             </div>
-            {normalRelays.length === 0 ? (
+            {relays.length === 0 ? (
               <div className="text-center py-12 text-[#637083]" data-testid="hl-relays-empty"><Lamp className="w-12 h-12 mx-auto mb-3 text-[#D1D5DB]" strokeWidth={1.5} /><p className="text-sm">No headlights added yet.</p></div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {normalRelays.map((relay) => {
+                {relays.map((relay) => {
                   const st = relayStatuses[relay.relayId] || "idle";
                   const bc = st === "on" ? "border-[#DA2C38]" : st === "failed" ? "border-[#F59E0B]" : "border-[#E5E7EB]";
                   const bg = st === "on" ? "bg-red-50" : st === "failed" ? "bg-yellow-50" : "bg-gray-50";

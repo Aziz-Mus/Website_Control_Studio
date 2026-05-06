@@ -24,7 +24,7 @@ export default function StudioHeadlights() {
   const [espIp, setEspIp] = useState("");
   const [connectSwitch, setConnectSwitch] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [hasOnAirConnected, setHasOnAirConnected] = useState(false);
+
   // Switch states are COMPUTED from relay statuses in localStorage, not stored separately
   const [roomSwitchStates, setRoomSwitchStates] = useState({});
   const [roomSwitchLoading, setRoomSwitchLoading] = useState({});
@@ -45,7 +45,6 @@ export default function StudioHeadlights() {
       const res = await axios.get(`${API}/studio/headlights/rooms`);
       const r = res.data.rooms || [];
       setRooms(r);
-      setHasOnAirConnected(r.some(rm => rm.onAirExitConnected));
       computeSwitchStates(r);  // Recompute switch states after fetching rooms
     } catch (e) { console.error(e); }
   }, [computeSwitchStates]);
@@ -67,7 +66,6 @@ export default function StudioHeadlights() {
     setEditingRoom(room);
     setRoomName(room.roomName);
     setEspIp(room.espIpAddress);
-    setConnectSwitch(room.onAirExitConnected || false);
     setDialogOpen(true);
   };
 
@@ -79,12 +77,11 @@ export default function StudioHeadlights() {
       if (editingRoom) {
         await axios.put(`${API}/studio/headlights/rooms/${editingRoom.roomId}`, {
           roomName: roomName.trim(),
-          espIpAddress: espIp.trim(),
-          connectOnAirExit: connectSwitch
+          espIpAddress: espIp.trim()
         });
         toast.success("Room updated successfully");
       } else {
-        await axios.post(`${API}/studio/headlights/rooms`, { roomName: roomName.trim(), espIpAddress: espIp.trim(), connectOnAirExit: connectSwitch });
+        await axios.post(`${API}/studio/headlights/rooms`, { roomName: roomName.trim(), espIpAddress: espIp.trim() });
         toast.success(`Room "${roomName}" added`);
       }
       fetchRooms(); setDialogOpen(false);
@@ -136,28 +133,7 @@ export default function StudioHeadlights() {
     setRoomSwitchLoading(p => ({ ...p, [room.roomId]: false }));
   };
 
-  // Determine if On Air/Exit connect toggle should be available
-  // Allow connect when: no room is connected, or the currently-edited room is not yet connected
-  const canConnectOnAir = editingRoom
-    ? !editingRoom.onAirExitConnected && !rooms.some(r => r.onAirExitConnected && r.roomId !== editingRoom.roomId)
-    : !hasOnAirConnected;
 
-  // For edit: show disconnect option if the room is already connected
-  const showDisconnect = editingRoom?.onAirExitConnected;
-
-  const handleDisconnect = async () => {
-    if (!editingRoom) return;
-    setSaving(true);
-    try {
-      await axios.put(`${API}/studio/headlights/rooms/${editingRoom.roomId}`, {
-        connectOnAirExit: false
-      });
-      toast.success("On Air/Exit switch disconnected");
-      await fetchRooms();  // await so rooms + hasOnAirConnected are updated before dialog closes
-      setDialogOpen(false);
-    } catch (e) { toast.error("Failed to disconnect"); }
-    setSaving(false);
-  };
 
   return (
     <div className="min-h-screen bg-[#F7F8F9]" data-testid="studio-headlights-page">
@@ -202,13 +178,7 @@ export default function StudioHeadlights() {
                     <p className="text-sm font-medium text-[#1C2025] truncate" title={room.roomName}>{room.roomName}</p>
                   </div>
                   <div className="flex items-center gap-1"><Wifi className="w-3 h-3 text-[#637083]" strokeWidth={1.5} /><span className="text-[10px] text-[#637083] truncate">{room.espIpAddress}</span></div>
-                  <p className="text-[10px] text-[#637083]">{(room.relays || []).filter(r => !r.isOnAirExit).length} device(s)</p>
-                  {room.onAirExitConnected && (
-                    <div className="flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded">
-                      <Radio className="w-3 h-3 text-[#DA2C38]" strokeWidth={2} />
-                      <span className="text-[9px] text-[#DA2C38] font-medium">ON AIR/EXIT</span>
-                    </div>
-                  )}
+                  <p className="text-[10px] text-[#637083]">{(room.relays || []).length} device(s)</p>
                 </div>
                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button data-testid={`edit-hl-room-${room.roomId}`} className="p-1 rounded hover:bg-blue-50" onClick={(e) => { e.stopPropagation(); openEdit(room); }}>
@@ -240,45 +210,7 @@ export default function StudioHeadlights() {
               <Input data-testid="hl-room-ip-input" placeholder="192.168.1.5" value={espIp} onChange={(e) => setEspIp(e.target.value)} required />
             </div>
 
-            {/* Show disconnect option if editing a room that is connected */}
-            {showDisconnect && (
-              <div className="border border-[#DA2C38] rounded-md p-3 bg-red-50 space-y-2" data-testid="onair-exit-connected-section">
-                <div className="flex items-center gap-2">
-                  <Radio className="w-4 h-4 text-[#DA2C38]" strokeWidth={2} />
-                  <span className="text-xs text-[#DA2C38] font-medium">Connected to On Air/Exit Switch</span>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="w-full text-xs border-[#DA2C38] text-[#DA2C38] hover:bg-red-100 rounded-md"
-                  onClick={handleDisconnect}
-                  disabled={saving}
-                  data-testid="disconnect-onair-btn"
-                >
-                  <WifiOff className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                  Disconnect On Air/Exit
-                </Button>
-              </div>
-            )}
 
-            {/* Show connect option if no room is connected yet and this room is not connected */}
-            {canConnectOnAir && (
-              <div className="border border-[#E5E7EB] rounded-md p-3 space-y-2" data-testid="onair-exit-connect-section">
-                <Label className="text-xs text-[#637083]">Connect On Air/Exit Switch?</Label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={connectSwitch ? "default" : "outline"}
-                  className={`w-full text-xs rounded-md ${connectSwitch ? "bg-[#DA2C38] hover:bg-[#B9252F] text-white" : ""}`}
-                  onClick={() => setConnectSwitch(!connectSwitch)}
-                  data-testid="connect-onair-btn"
-                >
-                  <Radio className="w-3.5 h-3.5 mr-1" strokeWidth={1.5} />
-                  {connectSwitch ? "Connected — On Air/Exit will be linked" : "Click to connect On Air/Exit"}
-                </Button>
-              </div>
-            )}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-md">Cancel</Button>

@@ -10,9 +10,6 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [onAirExit, setOnAirExit] = useState(false);
-  const [switchLoading, setSwitchLoading] = useState(false);
-  const [switchConnected, setSwitchConnected] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -48,32 +45,7 @@ export default function Navbar() {
     navigate(last && last !== "/studio" ? last : "/studio");
   };
 
-  const checkOnAirStatus = useCallback(async () => {
-    try {
-      const res = await axios.get(`${API}/studio/headlights/onair-exit-status`);
-      setSwitchConnected(res.data.connected);
-    } catch (e) { /* ignore */ }
-  }, []);
 
-  useEffect(() => { checkOnAirStatus(); }, [checkOnAirStatus, location.pathname]);
-
-  const handleOnAirToggle = async (checked) => {
-    setSwitchLoading(true);
-    try {
-      const res = await axios.post(`${API}/studio/headlights/onair-exit-control?state=${checked ? "ON" : "OFF"}`);
-      if (res.data.status === "success") {
-        setOnAirExit(checked);
-        toast.success(checked ? "On Air / Exit aktif" : "On Air / Exit nonaktif");
-      } else {
-        setOnAirExit(false);
-        toast.error("Gagal: " + (res.data.error || "Tidak dapat terhubung"));
-      }
-    } catch (e) {
-      setOnAirExit(false);
-      toast.error("Gagal mengendalikan On Air / Exit");
-    }
-    setSwitchLoading(false);
-  };
 
   return (
     <div ref={menuRef} className="sticky top-0 z-50">
@@ -141,24 +113,8 @@ export default function Navbar() {
         </div>
 
 
-        {/* Right: On Air/Exit + Hamburger */}
-        <div className="flex items-center gap-2 ml-auto" data-testid="onair-exit-area">
-          {/* On Air/Exit label — shorten on small screens */}
-          <span className="hidden sm:inline text-sm font-medium text-[#637083] tracking-wide whitespace-nowrap">
-            On Air/Exit
-          </span>
-          <span className="sm:hidden text-xs font-medium text-[#637083] whitespace-nowrap">
-            On Air
-          </span>
-
-          <Switch
-            data-testid="onair-exit-switch"
-            checked={onAirExit}
-            onCheckedChange={handleOnAirToggle}
-            disabled={switchLoading}
-            className="data-[state=checked]:bg-[#DA2C38]"
-          />
-
+        {/* Right: Hamburger */}
+        <div className="flex items-center ml-auto">
           {/* Hamburger button — mobile only */}
           <button
             className="md:hidden ml-1 p-2 rounded-md text-[#637083] hover:text-[#1C2025] hover:bg-gray-100 transition-colors"

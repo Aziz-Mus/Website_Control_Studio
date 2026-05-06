@@ -30,12 +30,10 @@ class DeviceUpdate(BaseModel):
 class RoomCreate(BaseModel):
     roomName: str
     espIpAddress: str
-    connectOnAirExit: Optional[bool] = False
 
 class RoomUpdate(BaseModel):
     roomName: Optional[str] = None
     espIpAddress: Optional[str] = None
-    connectOnAirExit: Optional[bool] = None  # Added: allow editing On Air/Exit connection
 
 class RelayCreate(BaseModel):
     deviceName: str

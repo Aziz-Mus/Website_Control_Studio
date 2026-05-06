@@ -39,12 +39,7 @@ async def get_hl_rooms():
 async def add_hl_room(room: RoomCreate):
     rooms = _hl_rooms()
     rid = next_room_id(rooms)
-    new_room = {"roomId": rid, "roomName": room.roomName, "espIpAddress": room.espIpAddress, "relays": [], "onAirExitConnected": False}
-    if room.connectOnAirExit:
-        has_connected = any(r.get("onAirExitConnected") for r in rooms)
-        if not has_connected:
-            new_room["onAirExitConnected"] = True
-            new_room["relays"].append({"relayId": "rl_onair_exit", "deviceName": "On Air / Exit Switch", "channelCode": "switch", "isOnAirExit": True})
+    new_room = {"roomId": rid, "roomName": room.roomName, "espIpAddress": room.espIpAddress, "relays": []}
     rooms.append(new_room)
     _hl_write(rooms)
     return {"status": "success", "room": new_room}
@@ -60,17 +55,7 @@ async def update_hl_room(room_id: str, update: RoomUpdate):
         room["roomName"] = update.roomName
     if update.espIpAddress is not None:
         room["espIpAddress"] = update.espIpAddress
-    if update.connectOnAirExit is True:
-        has_connected = any(r.get("onAirExitConnected") for r in rooms if r["roomId"] != room_id)
-        if not has_connected and not room.get("onAirExitConnected"):
-            room["onAirExitConnected"] = True
-            existing_onair = next((rl for rl in room.get("relays", []) if rl.get("isOnAirExit")), None)
-            if not existing_onair:
-                room.setdefault("relays", []).append({"relayId": "rl_onair_exit", "deviceName": "On Air / Exit Switch", "channelCode": "switch", "isOnAirExit": True})
-    elif update.connectOnAirExit is False:
-        if room.get("onAirExitConnected"):
-            room["onAirExitConnected"] = False
-            room["relays"] = [rl for rl in room.get("relays", []) if not rl.get("isOnAirExit")]
+
     _hl_write(rooms)
     return {"status": "success", "room": room}
 
@@ -148,22 +133,4 @@ async def deactivate_hl(request: BulkControlRequest):
     return await _relay_control(request, "OFF")
 
 
-@router.get("/onair-exit-status")
-async def get_onair_exit_status():
-    rooms = _hl_rooms()
-    for room in rooms:
-        if room.get("onAirExitConnected"):
-            return {"connected": True, "roomId": room["roomId"], "roomName": room["roomName"], "espIpAddress": room["espIpAddress"]}
-    return {"connected": False}
 
-
-@router.post("/onair-exit-control")
-async def control_onair_exit(state: str = "ON"):
-    rooms = _hl_rooms()
-    for room in rooms:
-        if room.get("onAirExitConnected"):
-            relay = next((rl for rl in room.get("relays", []) if rl.get("isOnAirExit")), None)
-            if relay:
-                result = await control_relay_channel(room["espIpAddress"], relay["channelCode"], state)
-                return {"status": result["status"], "error": result.get("error"), "roomId": room["roomId"]}
-    return {"status": "failed", "error": "No room connected to On Air/Exit switch"}
