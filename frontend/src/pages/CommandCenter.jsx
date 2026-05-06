@@ -180,11 +180,17 @@ export default function CommandCenter() {
     const newLayout = {};
     const overflowKodes = [];
 
-    // First pass: keep devices that fit in the new grid
+    const oldCols = gridConfig.cols;
+
+    // First pass: maintain (row, col) coordinates where possible
     Object.entries(gridLayout).forEach(([cellIdx, kode]) => {
       const idx = Number(cellIdx);
-      if (idx < totalCells) {
-        newLayout[cellIdx] = kode;
+      const r = Math.floor(idx / oldCols);
+      const c = idx % oldCols;
+
+      if (r < rows && c < cols) {
+        const newIdx = r * cols + c;
+        newLayout[String(newIdx)] = kode;
       } else {
         overflowKodes.push(kode);
       }

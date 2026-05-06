@@ -138,10 +138,20 @@ export default function StudioNeon() {
     const newConfig = { cols, rows };
     const totalCells = cols * rows;
     const newLayout = {};
-    const overflowKodes = [];
+    const oldCols = gridConfig.cols;
+
+    // First pass: maintain (row, col) coordinates where possible
     Object.entries(gridLayout).forEach(([cellIdx, kode]) => {
-      if (Number(cellIdx) < totalCells) newLayout[cellIdx] = kode;
-      else overflowKodes.push(kode);
+      const idx = Number(cellIdx);
+      const r = Math.floor(idx / oldCols);
+      const c = idx % oldCols;
+
+      if (r < rows && c < cols) {
+        const newIdx = r * cols + c;
+        newLayout[String(newIdx)] = kode;
+      } else {
+        overflowKodes.push(kode);
+      }
     });
     // Second pass: place overflow devices AND missing devices into empty cells
     const kodesCurrentlyIn = new Set(Object.values(newLayout).concat(overflowKodes));

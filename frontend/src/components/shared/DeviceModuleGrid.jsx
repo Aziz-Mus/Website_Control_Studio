@@ -16,10 +16,10 @@ const cardSizeClass = (cols) => {
 
 // Icon mode card dimensions — controls how big the card is inside the cell
 const iconCardSize = (cols) => {
-  if (cols <= 2) return { w: 90, h: 80, icon: "w-10 h-10" };   // card 44x44px, icon 24x24
-  if (cols <= 4) return { w: 84, h: 74, icon: "w-9 h-9" };   // card 38x38px, icon 20x20
-  if (cols <= 6) return { w: 78, h: 68, icon: "w-8 h-8" };   // card 32x32px, icon 16x16
-  return { w: 74, h: 64, icon: "w-7.5 h-7.5" };               // card 28x28px, icon 14x14
+  if (cols <= 2) return { w: 100, h: 100, icon: "w-12 h-12" };
+  if (cols <= 4) return { w: 90, h: 90, icon: "w-11 h-11" };
+  if (cols <= 6) return { w: 80, h: 80, icon: "w-10 h-10" };
+  return { w: 70, h: 70, icon: "w-9 h-9" };
 };
 
 // ── Detailed device card ───────────────────────────────────────────────────────
@@ -238,13 +238,13 @@ export default function DeviceModuleGrid({
   const isIconMode = displayMode === "icon";
 
   // Cell dimensions
-  const cellMinW = isIconMode ? 80 : 100;   // min-width per cell (for mobile scroll)
+  const cellMinW = isIconMode ? 60 : 100;   // min-width per cell (for mobile scroll)
   const cellH = isIconMode
-    ? Math.max(50, Math.min(80, Math.round(80 - cols * 2)))
+    ? Math.max(90, Math.min(120, Math.round(120 - cols * 1.5)))
     : Math.max(100, Math.min(160, Math.round(150 - cols * 6)));
 
   // Padding inside each cell — icon mode has more margin
-  const cellPadding = isIconMode ? "30%" : "6px";
+  const cellPadding = isIconMode ? "4px" : "6px";
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -253,12 +253,16 @@ export default function DeviceModuleGrid({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${cols}, minmax(${cellMinW}px, 1fr))`,
+            gridTemplateColumns: isIconMode 
+              ? `repeat(${cols}, ${cellH}px)` 
+              : `repeat(${cols}, minmax(${cellMinW}px, 1fr))`,
             gap: 0,
             border: "1px solid #E5E7EB",
             borderRadius: 8,
             overflow: "hidden",
-            minWidth: cols > 4 ? `${cols * cellMinW}px` : undefined,
+            minWidth: isIconMode ? undefined : (cols > 4 ? `${cols * cellMinW}px` : undefined),
+            width: isIconMode ? "fit-content" : "100%",
+            margin: isIconMode ? "0 auto" : undefined,
           }}
         >
           {Array.from({ length: totalCells }).map((_, cellIdx) => {
