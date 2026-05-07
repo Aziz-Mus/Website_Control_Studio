@@ -60,10 +60,34 @@ class RelayService:
             logger.error(f"Error controlling channel {channel} on {self.ip_address}: {e}")
             return {"error": str(e), "status": "failed"}
 
+    async def control_bulk(self, channels: list, state: str) -> dict:
+        """Kendalikan banyak channel sekaligus dalam satu request (Optimized)."""
+        try:
+            clean_channels = []
+            for c in channels:
+                try: clean_channels.append(int(c))
+                except: pass
+
+            payload = {"channels": clean_channels, "state": state.upper()}
+            print(f"\n[RELAY DEBUG] Sending BULK to {self.ip_address} | Channels: {clean_channels} | State: {state}")
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/control",
+                    json=payload,
+                    timeout=5.0
+                )
+                if response.status_code == 200:
+                    return {"status": "success"}
+                return {"status": "failed", "error": f"HTTP {response.status_code}"}
+        except Exception as e:
+            logger.error(f"Error in bulk control on {self.ip_address}: {e}")
+            return {"error": str(e), "status": "failed"}
+
     async def control_all(self, state: str) -> dict:
-        tasks = [self.control_channel(i, state) for i in range(1, self.channels + 1)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        return {"status": "success", "detail": results}
+        # Fallback to bulk if possible
+        return await self.control_bulk(list(range(1, self.channels + 1)), state)
+
 
 
 async def control_relay_channel(esp_ip: str, channel_code: str, state: str) -> dict:

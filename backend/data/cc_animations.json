@@ -3,8 +3,53 @@
     "id": "u_79a807e2",
     "name": "Red Green",
     "frames": [
-      {"rgb": [0, 255, 51]},
-      {"rgb": [255, 0, 0]}
+      {
+        "rgb": [
+          0,
+          255,
+          51
+        ]
+      },
+      {
+        "rgb": [
+          255,
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "id": "u_ec16577b",
+    "name": "Ocean",
+    "frames": [
+      {
+        "rgb": [
+          0,
+          0,
+          255
+        ],
+        "colortemp": null,
+        "brightness": null
+      },
+      {
+        "rgb": [
+          0,
+          191,
+          255
+        ],
+        "colortemp": null,
+        "brightness": null
+      },
+      {
+        "rgb": [
+          68,
+          142,
+          167
+        ],
+        "colortemp": null,
+        "brightness": null
+      }
     ]
   }
 ]

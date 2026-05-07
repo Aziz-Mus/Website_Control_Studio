@@ -1,0 +1,22 @@
+{
+  "devices": [
+    {
+      "acCode": 1,
+      "deviceName": "AC Central 1",
+      "ip": "10.1.34.52",
+      "lastTemperature": 24
+    },
+    {
+      "acCode": 2,
+      "deviceName": "AC Central 2",
+      "ip": "10.1.21.62",
+      "lastTemperature": 24
+    },
+    {
+      "acCode": 3,
+      "deviceName": "AC Showcase",
+      "ip": "10.1.18.109",
+      "lastTemperature": 24
+    }
+  ]
+}

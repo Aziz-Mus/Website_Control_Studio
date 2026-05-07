@@ -28,7 +28,7 @@ _loop_thread.start()
 ANIM_STATE = {"running": False, "name": "", "task": None}
 
 # ─── Light Topology (43 Lights) ───────────────────────────────────────────────
-_LIGHTS_FILE = Path(__file__).parent.parent / "data" / "cc_lights.json"
+_LIGHTS_FILE = Path(__file__).parent.parent / "data" / "command_center" / "lights.json"
 
 def _load_lights() -> list:
     """Load light topology from cc_lights.json. Falls back to empty list on error."""

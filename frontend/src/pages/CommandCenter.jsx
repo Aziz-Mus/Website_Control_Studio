@@ -39,7 +39,7 @@ export default function CommandCenter() {
   const [loading, setLoading]             = useState(false);
 
   // ── View mode ─────────────────────────────────────────────────────────────
-  const [viewMode, setViewMode]       = useState(() => loadStorage(VIEW_KEY, "list"));
+  const [viewMode, setViewMode]       = useState("grid");
   const [gridConfig, setGridConfig]   = useState(() => loadStorage(GRIDCONFIG_KEY, { cols: 4, rows: 5 }));
   const [gridLayout, setGridLayout]   = useState(() => loadStorage(GRIDLAYOUT_KEY, {}));
   const [gridMode, setGridMode]       = useState(() => loadStorage(GRIDMODE_KEY, "control"));
@@ -64,7 +64,6 @@ export default function CommandCenter() {
   // ── Persist ───────────────────────────────────────────────────────────────
   useEffect(() => { localStorage.setItem(STORAGE_KEY,    JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
   useEffect(() => { localStorage.setItem(SELECTED_KEY,   JSON.stringify(selectedIds)); },   [selectedIds]);
-  useEffect(() => { localStorage.setItem(VIEW_KEY,        JSON.stringify(viewMode)); },      [viewMode]);
   useEffect(() => { localStorage.setItem(GRIDMODE_KEY,    JSON.stringify(gridMode)); },      [gridMode]);
   useEffect(() => { localStorage.setItem(GRIDCONFIG_KEY, JSON.stringify(gridConfig)); },    [gridConfig]);
   useEffect(() => { localStorage.setItem(GRIDLAYOUT_KEY, JSON.stringify(gridLayout)); },    [gridLayout]);
@@ -336,8 +335,15 @@ export default function CommandCenter() {
   const handleStopAnim = async () => {
     try { await axios.post(`${BASE}/animation/stop`); } catch (e) {}
   };
-  const handleSaveAnim = async (anim) => {
-    try { await axios.post(`${BASE}/animations`, anim); fetchExtras(); } catch (e) {}
+  const handleSaveAnim = async (name, frames) => {
+    try {
+      await axios.post(`${BASE}/animations`, { name, frames });
+      toast.success(`Animation "${name}" saved`);
+      fetchExtras();
+    } catch (e) {
+      toast.error("Failed to save animation");
+      console.error(e);
+    }
   };
   const handleDeleteAnim = async (id) => {
     try { await axios.delete(`${BASE}/animations/${id}`); fetchExtras(); } catch (e) {}

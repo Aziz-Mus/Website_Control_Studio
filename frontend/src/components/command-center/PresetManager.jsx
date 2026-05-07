@@ -108,14 +108,34 @@ export default function PresetManager({ presets = [], onApply, onSave, onDelete,
           </div>
 
           {/* Brightness slider for preset */}
-          <div>
-            <div className="flex justify-between mb-1">
-              <label className="text-[9px] text-[#637083] font-medium uppercase">Brightness</label>
-              <span className="text-[9px] text-[#DA2C38] font-bold">{brightness}%</span>
+          <div className="space-y-1.5 py-1">
+            <div className="flex justify-between items-center px-0.5">
+              <label className="text-[9px] text-[#637083] font-bold uppercase tracking-wider">Brightness</label>
+              <span className="text-[10px] text-[#DA2C38] font-black">{brightness}%</span>
             </div>
-            <input type="range" min={1} max={100} value={brightness}
-              onChange={e => setBr(Number(e.target.value))}
-              className="w-full h-1.5 accent-[#DA2C38] cursor-pointer" />
+            <div className="relative h-6 flex items-center group">
+              {/* Custom Track Background */}
+              <div className="absolute w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-[#DA2C38] to-[#FF4D5A] transition-all duration-150"
+                  style={{ width: `${brightness}%` }}
+                />
+              </div>
+              {/* Actual Input Range (Hidden but functional) */}
+              <input 
+                type="range" 
+                min={1} 
+                max={100} 
+                value={brightness}
+                onChange={e => setBr(Number(e.target.value))}
+                className="absolute w-full h-full opacity-0 cursor-pointer z-10" 
+              />
+              {/* Visual Thumb */}
+              <div 
+                className="absolute w-4 h-4 bg-white border-2 border-[#DA2C38] rounded-full shadow-md pointer-events-none transition-all duration-150 group-hover:scale-110"
+                style={{ left: `calc(${brightness}% - 8px)` }}
+              />
+            </div>
           </div>
         </div>
 
@@ -146,7 +166,7 @@ export default function PresetManager({ presets = [], onApply, onSave, onDelete,
         {presets.length === 0 ? (
           <p className="text-xs text-[#9CA3AF] text-center py-4">No presets saved yet.</p>
         ) : (
-          <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+          <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
             {presets.map((p) => (
               <div
                 key={p.id}

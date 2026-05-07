@@ -33,18 +33,5 @@
         0
       ]
     }
-  },
-  {
-    "id": "45ce1acb-0f55-477d-8d43-5e9bb874989c",
-    "name": "Merah",
-    "settings": {
-      "is_on": true,
-      "brightness": 78,
-      "rgb": [
-        255,
-        0,
-        0
-      ]
-    }
   }
 ]

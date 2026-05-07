@@ -19,6 +19,7 @@ export default function AnimationBuilder({ onSave }) {
   const [name,   setName]   = useState("");
   const [frames, setFrames] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [pendingColor, setPendingColor] = useState("#FF0000");
 
   const addFrame = (hex) => {
     const r = parseInt(hex.slice(1,3),16);
@@ -28,6 +29,7 @@ export default function AnimationBuilder({ onSave }) {
   };
 
   const removeFrame = (idx) => setFrames((f) => f.filter((_,i) => i !== idx));
+  const clearFrames  = () => setFrames([]);
 
   const moveUp   = (idx) => setFrames((f) => { const a=[...f]; [a[idx-1],a[idx]]=[a[idx],a[idx-1]]; return a; });
   const moveDown = (idx) => setFrames((f) => { const a=[...f]; [a[idx],a[idx+1]]=[a[idx+1],a[idx]]; return a; });
@@ -42,24 +44,44 @@ export default function AnimationBuilder({ onSave }) {
 
   return (
     <div className="space-y-3 border border-dashed border-[#E5E7EB] rounded-lg p-3">
-      <p className="text-[10px] uppercase tracking-wider text-[#637083] font-medium">
-        Build Custom Animation
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] uppercase tracking-wider text-[#637083] font-medium">
+          Build Custom Animation
+        </p>
+        {frames.length > 0 && (
+          <button onClick={clearFrames} className="text-[9px] text-red-500 hover:underline font-medium">
+            Clear all
+          </button>
+        )}
+      </div>
 
       {/* Colour picker palette */}
       <div>
         <Label className="text-[10px] uppercase tracking-wider text-[#637083]">Add Frame Color</Label>
-        <div className="flex flex-wrap gap-1.5 mt-1.5">
-          {FRAME_PRESETS.map((c) => (
-            <button key={c} onClick={() => addFrame(c)}
-              className="w-7 h-7 rounded border-2 border-transparent hover:border-[#DA2C38] hover:scale-110 transition-all"
-              style={{backgroundColor:c}} title={c}
-            />
-          ))}
-          <label title="Custom color" className="w-7 h-7 rounded border-2 border-dashed border-[#D1D5DB] flex items-center justify-center cursor-pointer hover:border-[#DA2C38] transition-colors">
-            <Plus className="w-3 h-3 text-[#9CA3AF]" />
-            <input type="color" className="sr-only" onChange={(e) => addFrame(e.target.value.toUpperCase())} />
-          </label>
+        <div className="flex items-center gap-3 mt-1.5">
+          {/* Preset Swatches */}
+          <div className="flex flex-wrap gap-1 flex-1">
+            {FRAME_PRESETS.map((c) => (
+              <button key={c} onClick={() => setPendingColor(c)}
+                className={`w-6 h-6 rounded border-2 transition-all ${pendingColor === c ? "border-[#DA2C38] scale-110 shadow-sm" : "border-transparent hover:border-gray-300"}`}
+                style={{backgroundColor:c}} title={c}
+              />
+            ))}
+            <label title="Custom color" className="w-6 h-6 rounded border-2 border-dashed border-[#D1D5DB] flex items-center justify-center cursor-pointer hover:border-[#DA2C38] transition-colors bg-white relative">
+              <Plus className="w-3 h-3 text-[#9CA3AF]" />
+              <input type="color" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+                value={pendingColor} onChange={(e) => setPendingColor(e.target.value.toUpperCase())} />
+            </label>
+          </div>
+
+          {/* Add Action Section */}
+          <div className="flex items-center gap-2 pl-3 border-l border-[#E5E7EB]">
+            <div className="w-8 h-8 rounded border border-[#E5E7EB] shadow-inner" style={{backgroundColor: pendingColor}} />
+            <Button size="sm" onClick={() => addFrame(pendingColor)}
+              className="bg-[#DA2C38] hover:bg-[#B9252F] text-white h-8 text-[10px] px-2.5 font-bold tracking-tight">
+              ADD FRAME
+            </Button>
+          </div>
         </div>
       </div>
 

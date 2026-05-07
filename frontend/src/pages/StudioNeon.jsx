@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, ArrowLeft, List, Grid3X3, Settings2, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import MasterStatus from "@/components/shared/MasterStatus";
 import AddLightDialog from "@/components/shared/AddLightDialog";
 import GridConfigDialog from "@/components/shared/GridConfigDialog";
 import SavedSelectionPanel from "@/components/shared/SavedSelectionPanel";
+import SelectedControlPanel from "@/components/shared/SelectedControlPanel";
 
 const API  = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const BASE = `${API}/studio/neon`;
@@ -40,7 +41,7 @@ export default function StudioNeon() {
   const [loading, setLoading]               = useState(false);
   const [deviceStatuses, setDeviceStatuses] = useState(() => loadStorage(STORAGE_KEY, {}));
 
-  const [viewMode, setViewMode]           = useState(() => loadStorage(VIEW_KEY, "list"));
+  const [viewMode, setViewMode]           = useState("grid");
   const [gridConfig, setGridConfig]       = useState(() => loadStorage(GRIDCONFIG_KEY, { cols: 4, rows: 5 }));
   const [gridLayout, setGridLayout]       = useState(() => loadStorage(GRIDLAYOUT_KEY, {}));
   const [gridMode, setGridMode]           = useState(() => loadStorage(GRIDMODE_KEY, "control"));
@@ -51,7 +52,6 @@ export default function StudioNeon() {
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY,    JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
   useEffect(() => { localStorage.setItem(SELECTED_KEY,   JSON.stringify(selectedIds)); },   [selectedIds]);
-  useEffect(() => { localStorage.setItem(VIEW_KEY,        JSON.stringify(viewMode)); },      [viewMode]);
   useEffect(() => { localStorage.setItem(GRIDMODE_KEY,    JSON.stringify(gridMode)); },      [gridMode]);
   useEffect(() => { localStorage.setItem(GRIDCONFIG_KEY, JSON.stringify(gridConfig)); },    [gridConfig]);
   useEffect(() => { localStorage.setItem(GRIDLAYOUT_KEY, JSON.stringify(gridLayout)); },    [gridLayout]);
@@ -80,6 +80,38 @@ export default function StudioNeon() {
   }, []);
 
   useEffect(() => { fetchDevices(); fetchGridLayout(); fetchSavedSel(); }, [fetchDevices, fetchGridLayout, fetchSavedSel]);
+
+  // Sync grid: auto-place devices not yet in grid — runs once per device-list change
+  const gridSyncedRef = useRef(false);
+  useEffect(() => { gridSyncedRef.current = false; }, [devices]);
+
+  useEffect(() => {
+    if (!devices.length || gridSyncedRef.current) return;
+    const currentKodesInGrid = new Set(Object.values(gridLayout).map(String));
+    const missingDevices = devices.filter(d => !currentKodesInGrid.has(String(d.kode)));
+
+    if (missingDevices.length > 0) {
+      gridSyncedRef.current = true;
+      setGridLayout(prev => {
+        const newLayout = { ...prev };
+        const totalCells = gridConfig.cols * gridConfig.rows;
+        const usedCells = new Set(Object.keys(prev).map(Number));
+        let emptyIdx = 0;
+        missingDevices.forEach(device => {
+          while (emptyIdx < totalCells && usedCells.has(emptyIdx)) emptyIdx++;
+          if (emptyIdx < totalCells) {
+            newLayout[String(emptyIdx)] = device.kode;
+            usedCells.add(emptyIdx);
+            emptyIdx++;
+          }
+        });
+        axios.put(`${BASE}/grid-layout`, { ...gridConfig, cells: newLayout }).catch(() => {});
+        return newLayout;
+      });
+    } else {
+      gridSyncedRef.current = true;
+    }
+  }, [devices, gridConfig]); // gridLayout intentionally NOT in deps
 
   /* ── Device CRUD ──────────────────────────────────────────────────────── */
   const handleAdd = async ({ ip, nama }) => {
@@ -139,6 +171,7 @@ export default function StudioNeon() {
     const totalCells = cols * rows;
     const newLayout = {};
     const oldCols = gridConfig.cols;
+    const overflowKodes = [];
 
     // First pass: maintain (row, col) coordinates where possible
     Object.entries(gridLayout).forEach(([cellIdx, kode]) => {
@@ -169,10 +202,12 @@ export default function StudioNeon() {
     try { await axios.put(`${BASE}/grid-layout`, { ...newConfig, cells: newLayout }); } catch {}
   };
 
-  /* ── Saved Selections ─────────────────────────────────────────────────── */
-  const handleSaveSel   = async (name, kodes) => {
-    try { await axios.post(`${BASE}/saved-selections`, { name, kodes }); toast.success(`"${name}" saved`); fetchSavedSel(); }
-    catch { toast.error("Failed to save"); }
+  const handleSaveSel = async (name, ids) => {
+    try {
+      await axios.post(`${BASE}/saved-selections`, { name, kodes: ids });
+      toast.success(`"${name}" saved`);
+      fetchSavedSel();
+    } catch { toast.error("Failed to save selection"); }
   };
   const handleDeleteSel = async (id) => { try { await axios.delete(`${BASE}/saved-selections/${id}`); fetchSavedSel(); } catch {} };
   const handleApplySel  = sel => {
@@ -181,13 +216,11 @@ export default function StudioNeon() {
       setSelectedIds(prev => prev.filter(id => !valid.includes(id)));
       toast.success(`"${sel.name}" deselected — ${valid.length} device(s) removed`);
     } else {
-      // Add kodes from this selection to current selection (preventing duplicates)
       setSelectedIds(prev => Array.from(new Set([...prev, ...valid])));
       toast.success(`"${sel.name}" added — ${valid.length} device(s) added to selection`);
     }
   };
 
-  /* ── Light Control ────────────────────────────────────────────────────── */
   const updateFromResponse = (report, action) => {
     const ns = {};
     report.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; });
@@ -199,25 +232,48 @@ export default function StudioNeon() {
     else toast.success("All lights successful");
   };
 
-  const handleApplyColor = async ({ rgb, brightness: br, sceneId }) => {
-    if (!devices.length) return; setLoading(true);
+  const handleControlSelected = async (action) => {
+    if (!selectedIds.length) return;
+    setLoading(true);
+    try {
+      const targetDevices = devices.filter(d => selectedIds.includes(d.kode));
+      let results;
+      if (action === "on") {
+        results = await Promise.allSettled(
+          targetDevices.map(d => axios.post(`${BASE}/lampu`, {
+            KodeLampu: d.kode,
+            Warna: { Red: 255, Green: 255, Blue: 255 },
+            Kecerahan: brightness
+          }))
+        );
+      } else {
+        results = await Promise.allSettled(
+          targetDevices.map(d => axios.post(`${BASE}/turn-off`, { KodeLampu: d.kode }))
+        );
+      }
+      const ns = {};
+      results.forEach((r, i) => {
+        ns[targetDevices[i].kode] = r.status === "fulfilled" && r.value.data.status === "success" ? action : "failed";
+      });
+      setDeviceStatuses(p => ({ ...p, ...ns }));
+      const fc = Object.values(ns).filter(s => s === "failed").length;
+      if (fc > 0) toast.warning(`${selectedIds.length - fc} ok, ${fc} failed`);
+      else toast.success(`${selectedIds.length} light(s) turned ${action}`);
+    } catch { toast.error("Control failed"); }
+    setLoading(false);
+  };
+
+  const handleControlSolid = async ({ rgb, brightness: br, sceneId }) => {
+    if (!selectedIds.length) return; setLoading(true);
     const payload = sceneId
       ? { SceneId: sceneId, Kecerahan: br || brightness }
       : { Warna: { Red: rgb.r, Green: rgb.g, Blue: rgb.b }, Kecerahan: br || brightness };
     try {
-      if (selectedIds.length > 0 && selectedIds.length < devices.length) {
         const results = await Promise.allSettled(selectedIds.map(k => axios.post(`${BASE}/lampu`, { ...payload, KodeLampu: k })));
         const ns = {};
         results.forEach((r, i) => { ns[selectedIds[i]] = r.status === "fulfilled" && r.value.data.status === "success" ? "on" : "failed"; });
         setDeviceStatuses(p => ({ ...p, ...ns }));
-        const fc = Object.values(ns).filter(s => s === "failed").length;
-        if (fc > 0) toast.warning(`${selectedIds.length - fc} ok, ${fc} failed`);
-        else toast.success(`Applied to ${selectedIds.length} light(s)`);
-      } else {
-        const res = await axios.post(`${BASE}/lampu`, payload);
-        if (res.data.devices) updateFromResponse(res.data.devices, "on");
-        else toast.success("Applied to all");
-      }
+        toast.success("Applied to selected");
     } catch { toast.error("Failed"); }
     setLoading(false);
   };
@@ -249,7 +305,6 @@ export default function StudioNeon() {
           <ArrowLeft className="w-4 h-4" strokeWidth={1.5} />Back to Studio
         </button>
 
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1C2025]"
@@ -267,7 +322,6 @@ export default function StudioNeon() {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6 lg:items-start w-full">
-          {/* Left: Module Grid */}
           <div className="flex-1 w-full">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h2 className="text-sm font-semibold text-[#1C2025] uppercase tracking-wider"
@@ -341,7 +395,12 @@ export default function StudioNeon() {
 
           {/* Right: Control + Status + Saved Selections — sticky */}
           <div className="w-full lg:w-80 space-y-4 lg:sticky lg:top-20 lg:self-start">
-            <ChromaControl onApply={handleApplyColor} selectedCount={selectedIds.length}
+            <SelectedControlPanel
+              count={selectedIds.length}
+              onAction={handleControlSelected}
+              loading={loading}
+            />
+            <ChromaControl onApply={handleControlSolid} selectedCount={selectedIds.length}
               brightness={brightness} onBrightnessChange={setBrightness} />
             <MasterStatus total={devices.length} onCount={onCount} failedCount={failedCount} />
             <SavedSelectionPanel selections={savedSelections} selectedIds={selectedIds}

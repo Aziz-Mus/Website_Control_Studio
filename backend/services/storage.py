@@ -6,27 +6,32 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-# --- File constants ---
-SHOWCASE_NEON_FILE = "devices_showcase.json"
-STUDIO_NEON_FILE = "devices_studio.json"
-HL_ROOMS_FILE = "hl_rooms.json"
-AC_DEVICES_FILE = "ac_devices.json"
-CC_PRESETS_FILE = "cc_presets.json"
-CC_ANIMATIONS_FILE = "cc_animations.json"
-CC_LIGHTS_FILE = "cc_lights.json"
+# ── Showcase ────────────────────────────────────────────────────────────────
+SHOWCASE_NEON_FILE             = "showcase/devices.json"
+SHOWCASE_GRID_LAYOUT_FILE      = "showcase/grid_layout.json"
+SHOWCASE_SAVED_SEL_FILE        = "showcase/saved_selections.json"
 
-# ── Command Center Devices (CRUD, like showcase/studio_neon) ──────────────────
-CC_DEVICES_FILE = "cc_devices.json"
+# ── Studio: Neon ─────────────────────────────────────────────────────────────
+STUDIO_NEON_FILE               = "studio/neon/devices.json"
+STUDIO_NEON_GRID_LAYOUT_FILE   = "studio/neon/grid_layout.json"
+STUDIO_NEON_SAVED_SEL_FILE     = "studio/neon/saved_selections.json"
 
-# ── Grid Layout (per-page) ────────────────────────────────────────────────────
-SHOWCASE_GRID_LAYOUT_FILE      = "showcase_grid_layout.json"
-STUDIO_NEON_GRID_LAYOUT_FILE   = "studio_neon_grid_layout.json"
-CC_GRID_LAYOUT_FILE            = "cc_grid_layout.json"
+# ── Studio: Headlights ───────────────────────────────────────────────────────
+HL_ROOMS_FILE                  = "studio/headlights/rooms.json"
+HL_RELAY_SAVED_SEL_FILE        = "studio/headlights/relay_saved_selections.json"
+HL_ROOM_SAVED_SEL_FILE         = "studio/headlights/room_saved_selections.json"
+HL_ROOM_GRID_LAYOUT_FILE       = "studio/headlights/room_grid_layouts.json"
 
-# ── Saved Selections (per-page) ───────────────────────────────────────────────
-SHOWCASE_SAVED_SEL_FILE        = "showcase_saved_selections.json"
-STUDIO_NEON_SAVED_SEL_FILE     = "studio_neon_saved_selections.json"
-CC_SAVED_SEL_FILE              = "cc_saved_selections.json"
+# ── Studio: AC ───────────────────────────────────────────────────────────────
+AC_DEVICES_FILE                = "studio/ac/devices.json"
+
+# ── Command Center ────────────────────────────────────────────────────────────
+CC_DEVICES_FILE                = "command_center/devices.json"
+CC_LIGHTS_FILE                 = "command_center/lights.json"
+CC_GRID_LAYOUT_FILE            = "command_center/grid_layout.json"
+CC_PRESETS_FILE                = "command_center/presets.json"
+CC_ANIMATIONS_FILE             = "command_center/animations.json"
+CC_SAVED_SEL_FILE              = "command_center/saved_selections.json"
 
 
 
@@ -34,16 +39,16 @@ CC_SAVED_SEL_FILE              = "cc_saved_selections.json"
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
 def _ensure_file(path: Path, default_content=None):
-    """Create file with default dict content if missing."""
+    """Create file with default dict content if missing or empty."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
+    if not path.exists() or path.stat().st_size == 0:
         path.write_text(json.dumps(default_content or {}, indent=2))
 
 
 def _ensure_list_file(path: Path):
-    """Create file with empty list if missing."""
+    """Create file with empty list if missing or empty."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
+    if not path.exists() or path.stat().st_size == 0:
         path.write_text("[]")
 
 
@@ -57,17 +62,28 @@ def read_json(filename: str, default_key: str = None, raw: bool = False):
     - default_key=str  → file is a JSON object with that key (e.g. {"devices": [...]})
     """
     path = DATA_DIR / filename
-    if raw:
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text())
-    if default_key is None:
-        _ensure_list_file(path)
+    try:
+        if raw:
+            if not path.exists() or path.stat().st_size == 0:
+                return {}
+            return json.loads(path.read_text())
+        if default_key is None:
+            _ensure_list_file(path)
+            data = json.loads(path.read_text())
+            return data if isinstance(data, list) else []
+        _ensure_file(path, {default_key: []})
         data = json.loads(path.read_text())
-        return data if isinstance(data, list) else []
-    _ensure_file(path, {default_key: []})
-    data = json.loads(path.read_text())
-    return data.get(default_key, [])
+        return data.get(default_key, [])
+    except (json.JSONDecodeError, ValueError):
+        logger.warning(f"Corrupt/empty JSON file: {filename} — resetting to default")
+        if raw:
+            write_json(filename, {}, raw=True)
+            return {}
+        if default_key is None:
+            write_json(filename, [], raw=True)
+            return []
+        write_json(filename, [], key=default_key)
+        return []
 
 
 

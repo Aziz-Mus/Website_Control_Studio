@@ -56,7 +56,7 @@ export default function AnimationPanel({
       {animations.length === 0 ? (
         <p className="text-xs text-[#9CA3AF] text-center py-2">No animations saved yet.</p>
       ) : (
-        <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
+        <div className="space-y-1.5 max-h-[135px] overflow-y-auto pr-0.5 custom-scrollbar">
           {animations.map((a) => (
             <div key={a.id}
               className={`flex items-center gap-2 px-3 py-2.5 border rounded-md transition-colors group
