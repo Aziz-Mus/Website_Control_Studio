@@ -40,8 +40,8 @@ export default function CommandCenter() {
 
   // ── View mode ─────────────────────────────────────────────────────────────
   const [viewMode, setViewMode]       = useState("grid");
-  const [gridConfig, setGridConfig]   = useState(() => loadStorage(GRIDCONFIG_KEY, { cols: 4, rows: 5 }));
-  const [gridLayout, setGridLayout]   = useState(() => loadStorage(GRIDLAYOUT_KEY, {}));
+  const [gridConfig, setGridConfig]   = useState({ cols: 4, rows: 5 });
+  const [gridLayout, setGridLayout]   = useState({});
   const [gridMode, setGridMode]       = useState(() => loadStorage(GRIDMODE_KEY, "control"));
   const [displayMode, setDisplayMode] = useState(() => loadStorage(DISPLAY_KEY, "detailed"));
   const [configOpen, setConfigOpen]   = useState(false);
@@ -78,16 +78,8 @@ export default function CommandCenter() {
   const fetchGridLayout = useCallback(async () => {
     try {
       const r = await axios.get(`${BASE}/grid-layout`);
-      setGridConfig(prev => {
-        const server = { cols: r.data.cols, rows: r.data.rows };
-        // Use localStorage if available, otherwise server
-        const stored = loadStorage(GRIDCONFIG_KEY, null);
-        return stored || server;
-      });
-      setGridLayout(prev => {
-        const stored = loadStorage(GRIDLAYOUT_KEY, null);
-        return (stored && Object.keys(stored).length > 0) ? stored : (r.data.cells || {});
-      });
+      setGridConfig({ cols: r.data.cols || 4, rows: r.data.rows || 5 });
+      setGridLayout(r.data.cells || {});
     } catch (e) { console.error(e); }
   }, []);
 

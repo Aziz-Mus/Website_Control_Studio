@@ -39,13 +39,14 @@ export default function ShowcaseRoom() {
   const [deviceStatuses, setDeviceStatuses] = useState(() => loadStorage(STORAGE_KEY, {}));
 
   const [viewMode, setViewMode]           = useState("grid");
-  const [gridConfig, setGridConfig]       = useState(() => loadStorage(GRIDCONFIG_KEY, { cols: 4, rows: 5 }));
-  const [gridLayout, setGridLayout]       = useState(() => loadStorage(GRIDLAYOUT_KEY, {}));
+  const [gridConfig, setGridConfig]       = useState({ cols: 4, rows: 5 });
+  const [gridLayout, setGridLayout]       = useState({});
   const [gridMode, setGridMode]           = useState(() => loadStorage(GRIDMODE_KEY, "control"));
   const [displayMode, setDisplayMode]     = useState(() => loadStorage(DISPLAY_KEY, "detailed"));
   const [configOpen, setConfigOpen]       = useState(false);
   const [pendingCellIdx, setPendingCellIdx] = useState(null);
   const [savedSelections, setSavedSel]    = useState([]);
+  const [gridLoaded, setGridLoaded]       = useState(false);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY,    JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
   useEffect(() => { localStorage.setItem(SELECTED_KEY,   JSON.stringify(selectedIds)); },   [selectedIds]);
@@ -61,15 +62,10 @@ export default function ShowcaseRoom() {
   const fetchGridLayout = useCallback(async () => {
     try {
       const r = await axios.get(`${BASE}/grid-layout`);
-      setGridConfig(prev => {
-        const stored = loadStorage(GRIDCONFIG_KEY, null);
-        return stored || { cols: r.data.cols, rows: r.data.rows };
-      });
-      setGridLayout(prev => {
-        const stored = loadStorage(GRIDLAYOUT_KEY, null);
-        return (stored && Object.keys(stored).length > 0) ? stored : (r.data.cells || {});
-      });
-    } catch {}
+      setGridConfig({ cols: r.data.cols || 4, rows: r.data.rows || 5 });
+      setGridLayout(r.data.cells || {});
+      setGridLoaded(true);
+    } catch { setGridLoaded(true); }
   }, []);
 
   const fetchSavedSel = useCallback(async () => {
@@ -83,7 +79,7 @@ export default function ShowcaseRoom() {
   useEffect(() => { gridSyncedRef.current = false; }, [devices]);
 
   useEffect(() => {
-    if (!devices.length || gridSyncedRef.current) return;
+    if (!devices.length || gridSyncedRef.current || !gridLoaded) return;
     const currentKodesInGrid = new Set(Object.values(gridLayout).map(String));
     const missingDevices = devices.filter(d => !currentKodesInGrid.has(String(d.kode)));
 

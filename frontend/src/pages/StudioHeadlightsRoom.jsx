@@ -45,6 +45,7 @@ export default function StudioHeadlightsRoom() {
   const [displayMode,  setDisplayMode]  = useState(() => loadStorage(DISPLAY_KEY, "detailed"));
   const [configOpen,   setConfigOpen]   = useState(false);
   const [savedSels,    setSavedSels]    = useState([]);
+  const [gridLoaded,   setGridLoaded]   = useState(false);
 
   // Persist state
   useEffect(() => { localStorage.setItem(STORAGE_KEY,  JSON.stringify(relayStatuses)); }, [relayStatuses, STORAGE_KEY]);
@@ -62,7 +63,8 @@ export default function StudioHeadlightsRoom() {
       const res = await axios.get(`${API}/studio/headlights/rooms/${roomId}/grid-layout`);
       setGridConfig({ cols: res.data.cols || 4, rows: res.data.rows || 5 });
       setGridLayout(res.data.cells || {});
-    } catch {}
+      setGridLoaded(true);
+    } catch { setGridLoaded(true); }
   }, [roomId]);
 
   const fetchSavedSels = useCallback(async () => {
@@ -83,7 +85,7 @@ export default function StudioHeadlightsRoom() {
   }, [roomId]);
 
   useEffect(() => {
-    if (!room || !room.relays || gridSyncedRef.current) return;
+    if (!room || !room.relays || gridSyncedRef.current || !gridLoaded) return;
     const currentRelayIdsInGrid = new Set(Object.values(gridLayout));
     const missingRelays = room.relays.filter(r => !currentRelayIdsInGrid.has(r.relayId));
 
