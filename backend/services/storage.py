@@ -16,9 +16,13 @@ STUDIO_NEON_FILE               = "studio/neon/devices.json"
 STUDIO_NEON_GRID_LAYOUT_FILE   = "studio/neon/grid_layout.json"
 STUDIO_NEON_SAVED_SEL_FILE     = "studio/neon/saved_selections.json"
 
-# ── Studio: Headlights ───────────────────────────────────────────────────────
+# ── Studio: Headlights (flat — single ESP + relays) ──────────────────────────
+HL_CONFIG_FILE                 = "studio/headlights/config.json"
+HL_RELAY_SAVED_SEL_FILE        = "studio/headlights/saved_selections.json"
+HL_GRID_LAYOUT_FILE            = "studio/headlights/grid_layout.json"
+
+# Legacy (kept for migration reference — no longer used)
 HL_ROOMS_FILE                  = "studio/headlights/rooms.json"
-HL_RELAY_SAVED_SEL_FILE        = "studio/headlights/relay_saved_selections.json"
 HL_ROOM_SAVED_SEL_FILE         = "studio/headlights/room_saved_selections.json"
 HL_ROOM_GRID_LAYOUT_FILE       = "studio/headlights/room_grid_layouts.json"
 

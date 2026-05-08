@@ -33,9 +33,9 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Remember last studio sub-page
+  // Remember last studio page (including hub itself)
   useEffect(() => {
-    if (location.pathname.startsWith("/studio") && location.pathname !== "/studio") {
+    if (location.pathname.startsWith("/studio")) {
       localStorage.setItem("lastStudioPage", location.pathname);
     }
   }, [location.pathname]);

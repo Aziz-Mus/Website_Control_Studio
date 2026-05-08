@@ -190,16 +190,25 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
       if (isDragging.current) handleCanvasInteraction(e);
       if (isHueDragging.current) handleHueInteraction(e);
     };
+    const handleTouchMove = (e) => {
+      if (isDragging.current || isHueDragging.current) {
+        e.preventDefault(); // prevent page scroll while dragging
+        if (isDragging.current) handleCanvasInteraction(e);
+        if (isHueDragging.current) handleHueInteraction(e);
+      }
+    };
     const handlePointerUp = () => {
       isDragging.current = false;
       isHueDragging.current = false;
     };
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handlePointerUp);
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
     window.addEventListener("touchend", handlePointerUp);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handlePointerUp);
+      window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handlePointerUp);
     };
   });

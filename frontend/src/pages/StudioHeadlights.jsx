@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Lamp, Trash2, Wifi, Pencil, Bookmark } from "lucide-react";
+import { ArrowLeft, Plus, Lamp, Trash2, Sun, Power, CheckCircle, Pencil, List, Grid3X3, Settings2, Check, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import axios from "axios";
+import RelayModuleGrid from "@/components/shared/RelayModuleGrid";
+import SavedSelectionPanel from "@/components/shared/SavedSelectionPanel";
+import GridConfigDialog from "@/components/shared/GridConfigDialog";
 import SelectedControlPanel from "@/components/shared/SelectedControlPanel";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -18,181 +20,253 @@ function loadStorage(key, fallback) {
 
 export default function StudioHeadlights() {
   const navigate = useNavigate();
-  const [rooms,             setRooms]           = useState([]);
+
+  // Config (ESP IP + relays)
+  const [espIp,             setEspIp]           = useState("");
+  const [relays,            setRelays]           = useState([]);
+  const [ipDialogOpen,      setIpDialogOpen]     = useState(false);
+  const [ipInput,           setIpInput]          = useState("");
+
+  // Device dialog
   const [dialogOpen,        setDialogOpen]       = useState(false);
-  const [editingRoom,       setEditingRoom]       = useState(null);
-  const [roomName,          setRoomName]          = useState("");
-  const [espIp,             setEspIp]             = useState("");
-  const [saving,            setSaving]            = useState(false);
-  const [loading,           setLoading]           = useState(false);
+  const [editingRelay,      setEditingRelay]     = useState(null);
+  const [deviceName,        setDeviceName]       = useState("");
+  const [channelCode,       setChannelCode]      = useState("");
+  const [saving,            setSaving]           = useState(false);
+  const [loading,           setLoading]          = useState(false);
 
-  // Switch states computed from relay localStorage
-  const [roomSwitchStates,  setRoomSwitchStates]  = useState({});
-  const [roomSwitchLoading, setRoomSwitchLoading] = useState({});
+  // Relay statuses from localStorage
+  const [relayStatuses,     setRelayStatuses]    = useState(() => loadStorage("hl_relay_statuses", {}));
 
-  // Selection
-  const [selectedRoomIds,   setSelectedRoomIds]   = useState([]);
-  const [savedRoomSels,     setSavedRoomSels]      = useState([]);
-  const [selName,           setSelName]            = useState("");
+  // Selection & View State
+  const [selectedIds,       setSelectedIds]      = useState(() => loadStorage("hl_selected_ids", []));
+  const [viewMode,          setViewMode]         = useState("grid");
+  const [gridConfig,        setGridConfig]       = useState({ cols: 4, rows: 5 });
+  const [gridLayout,        setGridLayout]       = useState({});
+  const [gridMode,          setGridMode]         = useState(() => loadStorage("hl_grid_mode", "control"));
+  const [displayMode,       setDisplayMode]      = useState(() => loadStorage("hl_display_mode", "detailed"));
+  const [configOpen,        setConfigOpen]       = useState(false);
+  const [savedSels,         setSavedSels]        = useState([]);
+  const [gridLoaded,        setGridLoaded]       = useState(false);
 
-  // Compute switch state from localStorage relay statuses
-  const computeSwitchStates = useCallback((roomList) => {
-    const states = {};
-    roomList.forEach(room => {
-      const relayStatuses = loadStorage(`hl_relay_statuses_${room.roomId}`, {});
-      const allRelays = (room.relays || []);
-      states[room.roomId] = allRelays.length > 0 && allRelays.every(r => relayStatuses[r.relayId] === "on");
-    });
-    setRoomSwitchStates(states);
+  // Persist state
+  useEffect(() => { localStorage.setItem("hl_relay_statuses", JSON.stringify(relayStatuses)); }, [relayStatuses]);
+  useEffect(() => { localStorage.setItem("hl_selected_ids",   JSON.stringify(selectedIds));   }, [selectedIds]);
+  useEffect(() => { localStorage.setItem("hl_grid_mode",      JSON.stringify(gridMode));      }, [gridMode]);
+  useEffect(() => { localStorage.setItem("hl_display_mode",   JSON.stringify(displayMode));   }, [displayMode]);
+
+  // ── Fetch config (ESP IP + relays) ────────────────────────────────────────
+  const fetchConfig = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/studio/headlights/config`);
+      setEspIp(res.data.espIpAddress || "");
+      setRelays(res.data.relays || []);
+    } catch { console.error("Failed to fetch config"); }
   }, []);
 
-  const fetchRooms = useCallback(async () => {
+  const fetchGridLayout = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/studio/headlights/rooms`);
-      const r = res.data.rooms || [];
-      setRooms(r);
-      computeSwitchStates(r);
-    } catch { console.error("Failed to fetch rooms"); }
-  }, [computeSwitchStates]);
+      const res = await axios.get(`${API}/studio/headlights/grid-layout`);
+      setGridConfig({ cols: res.data.cols || 4, rows: res.data.rows || 5 });
+      setGridLayout(res.data.cells || {});
+      setGridLoaded(true);
+    } catch { setGridLoaded(true); }
+  }, []);
 
-  const fetchSavedRoomSels = useCallback(async () => {
+  const fetchSavedSels = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/studio/headlights/saved-rooms`);
-      setSavedRoomSels(res.data || []);
+      const res = await axios.get(`${API}/studio/headlights/saved-selections`);
+      setSavedSels(res.data || []);
     } catch {}
   }, []);
 
-  useEffect(() => { fetchRooms(); fetchSavedRoomSels(); }, [fetchRooms, fetchSavedRoomSels]);
+  useEffect(() => { fetchConfig(); fetchGridLayout(); fetchSavedSels(); }, [fetchConfig, fetchGridLayout, fetchSavedSels]);
 
-  // Recompute switch when page becomes visible
+  // ── Sync grid with relays ─────────────────────────────────────────────────
+  const gridSyncedRef = useRef(false);
+  useEffect(() => { gridSyncedRef.current = false; }, [relays]);
+
   useEffect(() => {
-    const handleVisibility = () => { if (!document.hidden) computeSwitchStates(rooms); };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [rooms, computeSwitchStates]);
+    if (!relays.length || gridSyncedRef.current || !gridLoaded) return;
+    const currentIdsInGrid = new Set(Object.values(gridLayout));
+    const missing = relays.filter(r => !currentIdsInGrid.has(r.relayId));
+    if (missing.length > 0) {
+      gridSyncedRef.current = true;
+      setGridLayout(prev => {
+        const newLayout = { ...prev };
+        const totalCells = gridConfig.cols * gridConfig.rows;
+        const usedCells = new Set(Object.keys(prev).map(Number));
+        let emptyIdx = 0;
+        missing.forEach(relay => {
+          while (emptyIdx < totalCells && usedCells.has(emptyIdx)) emptyIdx++;
+          if (emptyIdx < totalCells) {
+            newLayout[String(emptyIdx)] = relay.relayId;
+            usedCells.add(emptyIdx);
+            emptyIdx++;
+          }
+        });
+        axios.put(`${API}/studio/headlights/grid-layout`, { ...gridConfig, cells: newLayout }).catch(() => {});
+        return newLayout;
+      });
+    } else {
+      gridSyncedRef.current = true;
+    }
+  }, [relays, gridConfig, gridLoaded]); // gridLayout intentionally NOT in deps
 
-  // ── Room CRUD ──────────────────────────────────────────────────────────────
-  const openAdd  = () => { setEditingRoom(null); setRoomName(""); setEspIp(""); setDialogOpen(true); };
-  const openEdit = (room) => { setEditingRoom(room); setRoomName(room.roomName); setEspIp(room.espIpAddress); setDialogOpen(true); };
-
-  const handleSubmit = async (e) => {
+  // ── ESP IP Dialog ─────────────────────────────────────────────────────────
+  const openIpDialog = () => { setIpInput(espIp); setIpDialogOpen(true); };
+  const handleIpSave = async (e) => {
     e.preventDefault();
-    if (!roomName.trim() || !espIp.trim()) return;
+    if (!ipInput.trim()) return;
     setSaving(true);
     try {
-      if (editingRoom) {
-        await axios.put(`${API}/studio/headlights/rooms/${editingRoom.roomId}`, { roomName: roomName.trim(), espIpAddress: espIp.trim() });
-        toast.success("Room updated");
-      } else {
-        await axios.post(`${API}/studio/headlights/rooms`, { roomName: roomName.trim(), espIpAddress: espIp.trim() });
-        toast.success(`Room "${roomName}" added`);
-      }
-      fetchRooms(); setDialogOpen(false);
-    } catch { toast.error("Failed to save room"); }
+      await axios.put(`${API}/studio/headlights/config`, { espIpAddress: ipInput.trim() });
+      setEspIp(ipInput.trim());
+      toast.success("ESP IP updated");
+      setIpDialogOpen(false);
+    } catch { toast.error("Failed to update IP"); }
     setSaving(false);
   };
 
-  const handleDelete = async (roomId) => {
-    try { await axios.delete(`${API}/studio/headlights/rooms/${roomId}`); toast.success("Room deleted"); fetchRooms(); }
-    catch { toast.error("Failed to delete room"); }
-  };
+  // ── Relay CRUD ────────────────────────────────────────────────────────────
+  const openAdd  = () => { setEditingRelay(null); setDeviceName(""); setChannelCode(""); setDialogOpen(true); };
+  const openEdit = (relay) => { setEditingRelay(relay); setDeviceName(relay.deviceName); setChannelCode(relay.channelCode); setDialogOpen(true); };
 
-  // ── Room Switch (ON/OFF all relays in room) ────────────────────────────────
-  const handleRoomSwitch = async (room, checked) => {
-    const allRelays = (room.relays || []);
-    if (!allRelays.length) { toast.error("No devices in this room"); return; }
-    setRoomSwitchLoading(p => ({ ...p, [room.roomId]: true }));
-    const ep      = checked ? `${API}/studio/headlights/control` : `${API}/studio/headlights/deactivate`;
-    const payload = { rooms: [{ roomId: room.roomId, espIpAddress: room.espIpAddress, relays: allRelays.map(r => ({ relayId: r.relayId, channelCode: r.channelCode })) }] };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!deviceName.trim() || !channelCode.trim()) return;
+    setSaving(true);
     try {
-      const res = await axios.post(ep, payload);
-      const relayResults = res.data.rooms?.[0]?.relays || [];
-      if (relayResults.length > 0) {
-        const action = checked ? "on" : "off";
-        const ns = {};
-        relayResults.forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; });
-        const existing = loadStorage(`hl_relay_statuses_${room.roomId}`, {});
-        localStorage.setItem(`hl_relay_statuses_${room.roomId}`, JSON.stringify({ ...existing, ...ns }));
+      if (editingRelay) {
+        await axios.put(`${API}/studio/headlights/relays/${editingRelay.relayId}`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
+        toast.success("Device updated");
+      } else {
+        await axios.post(`${API}/studio/headlights/relays`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
+        toast.success(`"${deviceName}" added`);
       }
-      const sc = res.data.summary?.success || 0;
-      const fc = res.data.summary?.failed  || 0;
-      computeSwitchStates(rooms);
-      if (fc > 0 && sc > 0) toast.warning(`${sc} ok, ${fc} failed`);
-      else if (fc > 0) toast.error(`${fc} failed`);
-      else toast.success(`${sc} device(s) ${checked ? "on" : "off"}`);
-    } catch { computeSwitchStates(rooms); toast.error("Control failed"); }
-    setRoomSwitchLoading(p => ({ ...p, [room.roomId]: false }));
+      fetchConfig(); setDialogOpen(false);
+    } catch { toast.error("Failed to save device"); }
+    setSaving(false);
   };
 
-  // ── Room Selection ─────────────────────────────────────────────────────────
-  const handleToggleRoomSelect = (roomId) =>
-    setSelectedRoomIds(p => p.includes(roomId) ? p.filter(id => id !== roomId) : [...p, roomId]);
-  const handleSelectAll = () =>
-    setSelectedRoomIds(selectedRoomIds.length === rooms.length ? [] : rooms.map(r => r.roomId));
+  const handleDelete = async (relayId) => {
+    try {
+      await axios.delete(`${API}/studio/headlights/relays/${relayId}`);
+      toast.success("Device deleted");
+      setRelayStatuses(p => { const n = { ...p }; delete n[relayId]; return n; });
+      setSelectedIds(p => p.filter(id => id !== relayId));
+      const newLayout = Object.fromEntries(Object.entries(gridLayout).filter(([, v]) => v !== relayId));
+      setGridLayout(newLayout);
+      await axios.put(`${API}/studio/headlights/grid-layout`, { ...gridConfig, cells: newLayout });
+      fetchConfig();
+    } catch { toast.error("Failed to delete"); }
+  };
 
-  // ── Control Selected Rooms ─────────────────────────────────────────────────
-  const handleControlSelected = async (action) => {
-    const targetRooms = rooms.filter(r => selectedRoomIds.includes(r.roomId) && (r.relays || []).length > 0);
-    if (!targetRooms.length) return;
+  // ── Grid Layout ───────────────────────────────────────────────────────────
+  const handleLayoutChange = async (newLayout) => {
+    setGridLayout(newLayout);
+    try { await axios.put(`${API}/studio/headlights/grid-layout`, { ...gridConfig, cells: newLayout }); } catch {}
+  };
+
+  const handleGridConfigConfirm = async ({ cols, rows }) => {
+    const newConfig  = { cols, rows };
+    const totalCells = cols * rows;
+    const newLayout  = {};
+    const oldCols    = gridConfig.cols;
+    const overflow   = [];
+
+    Object.entries(gridLayout).forEach(([cellIdx, relayId]) => {
+      const idx = Number(cellIdx);
+      const r   = Math.floor(idx / oldCols);
+      const c   = idx % oldCols;
+      if (r < rows && c < cols) {
+        newLayout[String(r * cols + c)] = relayId;
+      } else {
+        overflow.push(relayId);
+      }
+    });
+
+    const currentIdsInGrid = new Set(Object.values(newLayout));
+    const allRelayIds = relays.map(r => r.relayId);
+    const missing = allRelayIds.filter(id => !currentIdsInGrid.has(id));
+    const toPlace = [...overflow, ...missing];
+
+    const usedCells = new Set(Object.keys(newLayout).map(Number));
+    let emptyIdx = 0;
+    for (const relayId of toPlace) {
+      while (emptyIdx < totalCells && usedCells.has(emptyIdx)) emptyIdx++;
+      if (emptyIdx < totalCells) {
+        newLayout[String(emptyIdx)] = relayId;
+        usedCells.add(emptyIdx);
+      }
+    }
+
+    setGridConfig(newConfig);
+    setGridLayout(newLayout);
+    try { await axios.put(`${API}/studio/headlights/grid-layout`, { ...newConfig, cells: newLayout }); } catch {}
+  };
+
+  // ── Selection ─────────────────────────────────────────────────────────────
+  const handleToggleSelect = (relayId) => setSelectedIds(p => p.includes(relayId) ? p.filter(id => id !== relayId) : [...p, relayId]);
+  const handleSelectAll    = () => setSelectedIds(selectedIds.length === relays.length ? [] : relays.map(r => r.relayId));
+
+  // ── Saved Selections ──────────────────────────────────────────────────────
+  const handleSaveSel  = async (name, ids) => {
+    try {
+      await axios.post(`${API}/studio/headlights/saved-selections`, { name, kodes: ids });
+      toast.success(`"${name}" saved`);
+      fetchSavedSels();
+    } catch { toast.error("Failed to save selection"); }
+  };
+  const handleDeleteSel = async (id) => { try { await axios.delete(`${API}/studio/headlights/saved-selections/${id}`); fetchSavedSels(); } catch {} };
+  const handleApplySel  = (sel) => {
+    const ids   = sel.relay_ids || sel.kodes || [];
+    const valid = ids.filter(id => relays.some(r => r.relayId === id));
+    if (sel._action === "deselect") {
+      setSelectedIds(prev => prev.filter(id => !valid.includes(id)));
+      toast.success(`"${sel.name}" deselected`);
+    } else {
+      setSelectedIds(prev => Array.from(new Set([...prev, ...valid])));
+      toast.success(`"${sel.name}" applied — ${valid.length} selected`);
+    }
+  };
+  const adaptedSels = savedSels.map(s => ({ ...s, kodes: s.relay_ids || s.kodes || [] }));
+
+  // ── Relay Control ─────────────────────────────────────────────────────────
+  const controlRelays = async (targetRelays, action) => {
+    if (!targetRelays.length) return;
+    if (!espIp) { toast.error("ESP IP not configured"); return; }
     setLoading(true);
     const ep      = action === "on" ? `${API}/studio/headlights/control` : `${API}/studio/headlights/deactivate`;
-    const payload = {
-      rooms: targetRooms.map(room => ({
-        roomId: room.roomId,
-        espIpAddress: room.espIpAddress,
-        relays: (room.relays || []).map(r => ({ relayId: r.relayId, channelCode: r.channelCode })),
-      })),
-    };
+    const payload = { espIpAddress: espIp, relays: targetRelays.map(r => ({ relayId: r.relayId, channelCode: r.channelCode })) };
     try {
       const res = await axios.post(ep, payload);
-      // Update localStorage for each room
-      res.data.rooms?.forEach(rm => {
-        const ns = {};
-        rm.relays.forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; });
-        const existing = loadStorage(`hl_relay_statuses_${rm.roomId}`, {});
-        localStorage.setItem(`hl_relay_statuses_${rm.roomId}`, JSON.stringify({ ...existing, ...ns }));
-      });
-      computeSwitchStates(rooms);
-      const sc = res.data.summary?.success || 0;
-      const fc = res.data.summary?.failed  || 0;
+      const ns  = {};
+      (res.data.relays || []).forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; });
+      setRelayStatuses(p => ({ ...p, ...ns }));
+      const fc = Object.values(ns).filter(s => s === "failed").length;
+      const sc = Object.values(ns).filter(s => s !== "failed").length;
       if (fc > 0 && sc > 0) toast.warning(`${sc} ok, ${fc} failed`);
       else if (fc > 0) toast.error(`${fc} failed`);
-      else toast.success(`${selectedRoomIds.length} room(s) ${action === "on" ? "activated" : "deactivated"}`);
+      else toast.success("Success");
     } catch { toast.error("Control failed"); }
     setLoading(false);
   };
 
-  // ── Saved Room Selections ──────────────────────────────────────────────────
-  const handleSaveRoomSel = async () => {
-    if (!selName.trim() || !selectedRoomIds.length) return;
-    try {
-      await axios.post(`${API}/studio/headlights/saved-rooms`, { name: selName.trim(), kodes: selectedRoomIds });
-      toast.success(`"${selName}" saved`);
-      setSelName("");
-      fetchSavedRoomSels();
-    } catch { toast.error("Failed to save group"); }
+  const handleControlSingle  = (relay, action) => controlRelays([relay], action);
+  const handleActivateAll    = () => controlRelays(relays, "on");
+  const handleDeactivateAll  = () => controlRelays(relays, "off");
+  const handleControlSelected = (action) => {
+    const target = relays.filter(r => selectedIds.includes(r.relayId));
+    controlRelays(target, action);
   };
 
-  const handleDeleteRoomSel = async (id) => {
-    try { await axios.delete(`${API}/studio/headlights/saved-rooms/${id}`); fetchSavedRoomSels(); } catch {}
-  };
-
-  const isSavedSelActive = (sel) => {
-    if (!sel.room_ids?.length) return false;
-    return sel.room_ids.every(id => selectedRoomIds.includes(id));
-  };
-
-  const handleToggleSavedSel = (sel) => {
-    const valid = (sel.room_ids || []).filter(id => rooms.some(r => r.roomId === id));
-    const active = isSavedSelActive(sel);
-    if (active) {
-      setSelectedRoomIds(prev => prev.filter(id => !valid.includes(id)));
-      toast.success(`"${sel.name}" deselected`);
-    } else {
-      setSelectedRoomIds(prev => Array.from(new Set([...prev, ...valid])));
-      toast.success(`"${sel.name}" added to selection`);
-    }
-  };
+  // ── Computed ──────────────────────────────────────────────────────────────
+  const onCount     = relays.filter(r => relayStatuses[r.relayId] === "on").length;
+  const failedCount = relays.filter(r => relayStatuses[r.relayId] === "failed").length;
+  const totalCount  = relays.length;
+  const powerLoad   = totalCount > 0 ? Math.round((onCount / totalCount) * 100) : 0;
+  const ms          = totalCount === 0 ? "empty" : onCount === totalCount ? "all_active" : onCount > 0 || failedCount > 0 ? "partially_active" : "all_inactive";
 
   return (
     <div className="min-h-screen bg-[#F7F8F9]" data-testid="studio-headlights-page">
@@ -205,162 +279,181 @@ export default function StudioHeadlights() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#1C2025]" style={{ fontFamily: "Work Sans, sans-serif" }} data-testid="headlights-title">Studio: Main Headlights</h1>
-            <p className="text-sm text-[#637083] mt-1">Control high-precision lighting arrays. Add rooms and configure headlight relays.</p>
+            <p className="text-sm text-[#637083] mt-1">Control relay-based headlight arrays via ESP.</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {rooms.length > 0 && (
-              <Button variant="outline" size="sm" onClick={handleSelectAll} className="rounded-md text-xs">
-                {selectedRoomIds.length === rooms.length ? "Deselect All" : "Select All"}
-              </Button>
-            )}
-            <Button size="sm" onClick={openAdd} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs" data-testid="add-hl-room-btn">
-              <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={2} />Add Room
-            </Button>
+            <Button className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs" onClick={handleActivateAll} disabled={loading || !relays.length || !espIp} data-testid="hl-activate-all-btn">ACTIVATE ALL</Button>
+            <Button variant="outline" className="border-[#DA2C38] text-[#DA2C38] hover:bg-red-50 rounded-md text-xs" onClick={handleDeactivateAll} disabled={loading || !relays.length || !espIp} data-testid="hl-deactivate-all-btn">DEACTIVATE ALL</Button>
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-6 lg:items-start">
-          {/* Room Grid */}
-          <div className="flex-1">
-            {rooms.length === 0 ? (
-              <div className="text-center py-16 text-[#637083]" data-testid="hl-rooms-empty">
-                <Lamp className="w-12 h-12 mx-auto mb-3 text-[#D1D5DB]" strokeWidth={1.5} />
-                <p className="text-sm">No rooms added yet.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {rooms.map((room) => {
-                  const isSelected = selectedRoomIds.includes(room.roomId);
-                  return (
-                    <div key={room.roomId} data-testid={`hl-room-${room.roomId}`}
-                      className={`bg-white border-2 rounded-md p-4 hover:shadow-md transition-all cursor-pointer group relative ${isSelected ? "border-[#DA2C38] shadow-md" : "border-[#E5E7EB] hover:border-[#DA2C38]"}`}
-                      onClick={() => handleToggleRoomSelect(room.roomId)}
-                    >
-                      {/* Selected indicator */}
-                      {isSelected && (
-                        <div className="absolute top-1.5 left-1.5 w-3.5 h-3.5 rounded-full bg-[#DA2C38] flex items-center justify-center z-10">
-                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                        </div>
-                      )}
-                      {/* Switch */}
-                      <div className="absolute top-2 right-2 z-10" onClick={e => e.stopPropagation()}>
-                        <Switch
-                          data-testid={`room-switch-${room.roomId}`}
-                          checked={roomSwitchStates[room.roomId] || false}
-                          onCheckedChange={checked => handleRoomSwitch(room, checked)}
-                          disabled={roomSwitchLoading[room.roomId] || !(room.relays || []).length}
-                          className="data-[state=checked]:bg-[#DA2C38] scale-75"
-                        />
-                      </div>
-                      {/* Card content */}
-                      <div className="flex flex-col items-center gap-2 pt-2">
-                        <div className={`p-2.5 rounded-md ${isSelected ? "bg-red-50" : "bg-red-50"}`}>
-                          <Lamp className="w-6 h-6 text-[#DA2C38]" strokeWidth={1.5} />
-                        </div>
-                        <div className="text-center w-full">
-                          <p className="text-[10px] uppercase tracking-wider text-[#637083]">{room.roomId}</p>
-                          <p className="text-sm font-medium text-[#1C2025] truncate" title={room.roomName}>{room.roomName}</p>
-                        </div>
-                        <div className="flex items-center gap-1"><Wifi className="w-3 h-3 text-[#637083]" strokeWidth={1.5} /><span className="text-[10px] text-[#637083] truncate">{room.espIpAddress}</span></div>
-                        <p className="text-[10px] text-[#637083]">{(room.relays || []).length} device(s)</p>
-                        <Button size="sm" variant="link" className="text-[10px] text-[#DA2C38] h-auto p-0" onClick={e => { e.stopPropagation(); navigate(`/studio/headlights/${room.roomId}`); }}>
-                          Open Room →
-                        </Button>
-                      </div>
-                      {/* Edit/Delete hover */}
-                      <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button data-testid={`edit-hl-room-${room.roomId}`} className="p-1 rounded hover:bg-blue-50" onClick={e => { e.stopPropagation(); openEdit(room); }}>
-                          <Pencil className="w-3 h-3 text-[#637083]" strokeWidth={1.5} />
-                        </button>
-                        <button data-testid={`delete-hl-room-${room.roomId}`} className="p-1 rounded hover:bg-red-50" onClick={e => { e.stopPropagation(); handleDelete(room.roomId); }}>
-                          <Trash2 className="w-3 h-3 text-[#637083]" strokeWidth={1.5} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+        {/* ESP IP Config Bar */}
+        <div className="bg-white border border-[#E5E7EB] rounded-md p-3 mb-4 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <Wifi className="w-4 h-4 text-[#637083]" strokeWidth={1.5} />
+            <span className="text-xs text-[#637083] uppercase tracking-wider font-medium">ESP IP:</span>
           </div>
+          <span className="text-sm font-medium text-[#1C2025]">{espIp || "Not configured"}</span>
+          <Button size="sm" variant="outline" onClick={openIpDialog} className="rounded-md text-xs ml-auto">
+            <Pencil className="w-3 h-3 mr-1" />{espIp ? "Change" : "Set IP"}
+          </Button>
+        </div>
 
-          {/* Right Sidebar: Saved Room Selections */}
-          {rooms.length > 0 && (
-            <div className="w-full lg:w-72 lg:sticky lg:top-20 lg:self-start space-y-4">
-              {/* Selected Control Panel */}
-              <SelectedControlPanel
-                count={selectedRoomIds.length}
-                onAction={handleControlSelected}
-                loading={loading}
-                unit="rooms"
-              />
-
-              <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Bookmark className="w-4 h-4 text-[#DA2C38]" strokeWidth={2} />
-                  <h3 className="text-sm font-semibold text-[#1C2025]" style={{ fontFamily: "Work Sans, sans-serif" }}>Saved Room Groups</h3>
+        <div className="flex flex-col lg:flex-row gap-6 lg:items-start w-full">
+          {/* Left: Relay Grid */}
+          <div className="flex-1 w-full">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h2 className="text-sm font-semibold text-[#1C2025] uppercase tracking-wider" style={{ fontFamily: "Work Sans, sans-serif" }}>Headlight Grid</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* View toggle */}
+                <div className="flex items-center border border-[#E5E7EB] rounded-md overflow-hidden">
+                  {[["list", "List", List], ["grid", "Grid", Grid3X3]].map(([mode, label, Icon]) => (
+                    <button key={mode} onClick={() => setViewMode(mode)}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${viewMode === mode ? "bg-[#DA2C38] text-white" : "text-[#637083] hover:bg-[#F3F4F6]"}`}>
+                      <Icon className="w-3.5 h-3.5" />{label}
+                    </button>
+                  ))}
                 </div>
-                {/* Save current */}
-                <div className="space-y-2">
-                  <p className="text-[10px] text-[#637083] uppercase tracking-wider font-medium">
-                    Save Current ({selectedRoomIds.length} selected)
-                  </p>
-                  <div className="flex gap-2">
-                    <Input value={selName} onChange={e => setSelName(e.target.value)} placeholder="e.g. Studio Utama" className="text-xs h-8 rounded-md" onKeyDown={e => e.key === "Enter" && handleSaveRoomSel()} />
-                    <Button size="sm" onClick={handleSaveRoomSel} disabled={!selName.trim() || !selectedRoomIds.length}
-                      className="h-8 px-3 bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs whitespace-nowrap">Save</Button>
+                {/* Grid-only controls */}
+                {viewMode === "grid" && <>
+                  <div className="flex items-center border border-[#E5E7EB] rounded-md overflow-hidden">
+                    {[["edit", "Edit", Pencil], ["control", "Control", Check]].map(([mode, label, Icon]) => (
+                      <button key={mode} onClick={() => setGridMode(mode)}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${gridMode === mode ? "bg-[#1C2025] text-white" : "text-[#637083] hover:bg-[#F3F4F6]"}`}>
+                        <Icon className="w-3.5 h-3.5" />{label}
+                      </button>
+                    ))}
                   </div>
-                  {!selectedRoomIds.length && <p className="text-[10px] text-[#9CA3AF]">Select at least 1 room to save.</p>}
-                </div>
-                {/* Saved list */}
-                {savedRoomSels.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] text-[#637083] uppercase tracking-wider font-medium">Saved</p>
-                    <div className={`space-y-1.5 ${savedRoomSels.length > 5 ? "max-h-[200px] overflow-y-auto pr-1" : ""}`} style={savedRoomSels.length > 5 ? { scrollbarWidth: "thin" } : undefined}>
-                      {savedRoomSels.map(sel => {
-                        const active = isSavedSelActive(sel);
-                        return (
-                          <div key={sel.id}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-md border transition-colors group cursor-pointer ${active ? "border-[#DA2C38] bg-red-50" : "border-[#E5E7EB] hover:border-[#DA2C38]"}`}
-                            onClick={() => handleToggleSavedSel(sel)}>
-                            <div className="flex-1">
-                              <p className={`text-xs font-medium ${active ? "text-[#DA2C38]" : "text-[#1C2025]"}`}>{sel.name}</p>
-                              <p className="text-[10px] text-[#9CA3AF]">{sel.room_ids?.length ?? 0} room(s)</p>
-                            </div>
-                            <button onClick={e => { e.stopPropagation(); handleDeleteRoomSel(sel.id); }}
-                              className="p-1 rounded hover:bg-red-50 text-[#637083] opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs text-[#9CA3AF] text-center py-2">No saved groups yet.</p>
+                  <Button size="sm" variant="outline" onClick={() => setConfigOpen(true)} className="rounded-md text-xs border-[#E5E7EB]">
+                    <Settings2 className="w-3.5 h-3.5 mr-1" />{gridConfig.cols}×{gridConfig.rows}
+                  </Button>
+                  {/* Detail/Icon toggle */}
+                  <button
+                    onClick={() => setDisplayMode(displayMode === "detailed" ? "icon" : "detailed")}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all select-none ${displayMode === "detailed" ? "bg-[#1C2025] border-[#1C2025] text-white" : "border-[#E5E7EB] text-[#637083] hover:bg-[#F3F4F6]"}`}>
+                    <span className={`relative inline-flex items-center w-7 h-4 rounded-full transition-colors flex-shrink-0 ${displayMode === "detailed" ? "bg-[#DA2C38]" : "bg-[#D1D5DB]"}`}>
+                      <span className={`absolute w-3 h-3 rounded-full bg-white shadow transition-transform ${displayMode === "detailed" ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                    </span>
+                    Detail
+                  </button>
+                </>}
+                {relays.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={handleSelectAll} className="rounded-md text-xs" data-testid="hl-select-all-btn">
+                    {selectedIds.length === relays.length ? "Deselect All" : "Select All"}
+                  </Button>
                 )}
+                <Button size="sm" onClick={openAdd} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md text-xs" data-testid="add-hl-device-btn">
+                  <Plus className="w-3.5 h-3.5 mr-1" strokeWidth={2} />Add Headlight
+                </Button>
               </div>
             </div>
-          )}
+
+            <RelayModuleGrid
+              relays={relays}
+              selectedIds={selectedIds}
+              relayStatuses={relayStatuses}
+              viewMode={viewMode}
+              gridConfig={gridConfig}
+              gridLayout={gridLayout}
+              gridMode={gridMode}
+              displayMode={displayMode}
+              onToggleSelect={handleToggleSelect}
+              onControlSingle={handleControlSingle}
+              onDelete={handleDelete}
+              onEdit={openEdit}
+              onAddAtCell={idx => { setEditingRelay(null); setDeviceName(""); setChannelCode(""); setDialogOpen(true); }}
+              onLayoutChange={handleLayoutChange}
+            />
+          </div>
+
+          {/* Right Sidebar */}
+          <div className="w-full lg:w-72 space-y-4 lg:sticky lg:top-20 lg:self-start">
+            {/* Selected Control Panel */}
+            <SelectedControlPanel 
+              count={selectedIds.length} 
+              onAction={handleControlSelected} 
+              loading={loading} 
+            />
+
+            {/* Saved Selections Panel */}
+            <SavedSelectionPanel
+              selections={adaptedSels}
+              selectedIds={selectedIds}
+              onSave={handleSaveSel}
+              onApply={handleApplySel}
+              onDelete={handleDeleteSel}
+            />
+
+            {/* Master Status */}
+            <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 space-y-3" data-testid="hl-master-status">
+              <h3 className="text-xs uppercase tracking-wider text-[#637083] font-medium" style={{ fontFamily: "Work Sans, sans-serif" }}>Master Light Status</h3>
+              <div className={`border rounded-md p-4 flex items-center gap-3 ${ms === "all_active" || ms === "partially_active" ? "border-[#DA2C38]" : "border-[#E5E7EB]"}`}>
+                {ms === "all_inactive" || ms === "empty" ? <Power className="w-6 h-6 text-[#637083]" strokeWidth={1.5} /> : <Sun className="w-6 h-6 text-[#DA2C38]" strokeWidth={1.5} />}
+                <div>
+                  <p className={`text-sm font-semibold ${ms === "all_active" ? "text-[#10B981]" : ms === "partially_active" ? "text-[#DA2C38]" : "text-[#637083]"}`}>
+                    {ms === "all_active" ? "ALL ACTIVE" : ms === "partially_active" ? "PARTIALLY ACTIVE" : ms === "empty" ? "NO DEVICES" : "ALL INACTIVE"}
+                  </p>
+                  <p className="text-xs text-[#637083]">{onCount} / {totalCount} Online</p>
+                </div>
+              </div>
+              {failedCount > 0 && <div className="flex items-center gap-2 text-xs"><div className="w-2.5 h-2.5 rounded-full bg-[#F59E0B]" /><span className="text-[#F59E0B] font-medium">{failedCount} FAILED</span></div>}
+            </div>
+
+            {/* System Status */}
+            <div className="bg-white border border-[#E5E7EB] rounded-xl p-4 space-y-3">
+              <h3 className="text-xs uppercase tracking-wider text-[#637083] font-medium" style={{ fontFamily: "Work Sans, sans-serif" }}>System Status</h3>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-[#637083]">POWER LOAD</span>
+                  <span className="text-xs font-medium text-[#1C2025]">{powerLoad}%</span>
+                </div>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#DA2C38] rounded-full transition-all" style={{ width: `${powerLoad}%` }} />
+                </div>
+              </div>
+              <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-[#10B981]" strokeWidth={1.5} /><span className="text-xs text-[#10B981] font-medium">ARRAYS NOMINAL</span></div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Add/Edit Room Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md rounded-md" data-testid="hl-room-dialog">
+      {/* ESP IP Dialog */}
+      <Dialog open={ipDialogOpen} onOpenChange={setIpDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-md" data-testid="hl-ip-dialog">
           <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Work Sans, sans-serif" }}>{editingRoom ? "Edit Room" : "Add New Room"}</DialogTitle>
-            <DialogDescription>{editingRoom ? "Update room name and ESP IP address." : "Enter room name and ESP IP address."}</DialogDescription>
+            <DialogTitle style={{ fontFamily: "Work Sans, sans-serif" }}>ESP IP Address</DialogTitle>
+            <DialogDescription>Enter the IP address of the ESP controller.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2"><Label>Room Name</Label><Input data-testid="hl-room-name-input" placeholder="Main Studio" value={roomName} onChange={e => setRoomName(e.target.value)} required /></div>
-            <div className="space-y-2"><Label>ESP IP Address</Label><Input data-testid="hl-room-ip-input" placeholder="192.168.1.5" value={espIp} onChange={e => setEspIp(e.target.value)} required /></div>
+          <form onSubmit={handleIpSave} className="space-y-4">
+            <div className="space-y-2"><Label>IP Address</Label><Input data-testid="hl-ip-input" placeholder="192.168.1.5" value={ipInput} onChange={e => setIpInput(e.target.value)} required /></div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-md">Cancel</Button>
-              <Button type="submit" disabled={saving} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md" data-testid="hl-room-save-btn">{saving ? "Saving..." : "Save"}</Button>
+              <Button type="button" variant="outline" onClick={() => setIpDialogOpen(false)} className="rounded-md">Cancel</Button>
+              <Button type="submit" disabled={saving} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md" data-testid="hl-ip-save-btn">{saving ? "Saving..." : "Save"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Add/Edit Device Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-md" data-testid="hl-device-dialog">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "Work Sans, sans-serif" }}>{editingRelay ? "Edit Headlight" : "Add Headlight"}</DialogTitle>
+            <DialogDescription>Enter device name and channel code.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2"><Label>Device Name</Label><Input data-testid="hl-device-name-input" value={deviceName} onChange={e => setDeviceName(e.target.value)} required /></div>
+            <div className="space-y-2"><Label>Channel Code</Label><Input data-testid="hl-device-channel-input" value={channelCode} onChange={e => setChannelCode(e.target.value)} required /></div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="rounded-md">Cancel</Button>
+              <Button type="submit" disabled={saving} className="bg-[#DA2C38] hover:bg-[#B9252F] text-white rounded-md" data-testid="hl-device-save-btn">{saving ? "Saving..." : "Save"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <GridConfigDialog open={configOpen} onOpenChange={setConfigOpen} initial={gridConfig} deviceCount={relays.length} onConfirm={handleGridConfigConfirm} />
     </div>
   );
 }

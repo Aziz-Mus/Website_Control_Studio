@@ -298,7 +298,7 @@ export default function RelayModuleGrid({
             border: "1px solid #E5E7EB",
             borderRadius: 8,
             overflow: "hidden",
-            minWidth: isIconMode ? undefined : (cols > 4 ? `${cols * cellMinW}px` : undefined),
+            minWidth: `${cols * (isIconMode ? cellH : cellMinW)}px`,
             width: isIconMode ? "fit-content" : "100%",
             margin: isIconMode ? "0 auto" : undefined,
           }}

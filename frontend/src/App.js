@@ -9,7 +9,6 @@ import StudioNeon from "@/pages/StudioNeon";
 import StudioAC from "@/pages/StudioAC";
 import StudioACRoom from "@/pages/StudioACRoom";
 import StudioHeadlights from "@/pages/StudioHeadlights";
-import StudioHeadlightsRoom from "@/pages/StudioHeadlightsRoom";
 import CommandCenter from "@/pages/CommandCenter";
 
 function App() {
@@ -26,7 +25,6 @@ function App() {
             <Route path="/studio/ac" element={<StudioAC />} />
             <Route path="/studio/ac/:roomId" element={<StudioACRoom />} />
             <Route path="/studio/headlights" element={<StudioHeadlights />} />
-            <Route path="/studio/headlights/:roomId" element={<StudioHeadlightsRoom />} />
             <Route path="/command-center" element={<CommandCenter />} />
           </Routes>
         </main>

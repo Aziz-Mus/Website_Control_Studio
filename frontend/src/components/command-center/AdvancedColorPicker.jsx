@@ -113,11 +113,19 @@ export default function AdvancedColorPicker({ onColorChange, brightness = 200, o
       if(isDragging.current) handleCanvas(e);
       if(isHueDragging.current) handleHue(e);
     };
+    const tm = (e) => {
+      if (isDragging.current || isHueDragging.current) {
+        e.preventDefault(); // prevent page scroll while dragging
+        if(isDragging.current) handleCanvas(e);
+        if(isHueDragging.current) handleHue(e);
+      }
+    };
     const up = () => { isDragging.current=false; isHueDragging.current=false; };
     window.addEventListener("mousemove",mv);
     window.addEventListener("mouseup",up);
+    window.addEventListener("touchmove",tm,{ passive: false });
     window.addEventListener("touchend",up);
-    return () => { window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up); window.removeEventListener("touchend",up); };
+    return () => { window.removeEventListener("mousemove",mv); window.removeEventListener("mouseup",up); window.removeEventListener("touchmove",tm); window.removeEventListener("touchend",up); };
   });
 
   const applyPreset = (color) => {

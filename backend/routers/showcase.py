@@ -16,6 +16,9 @@ router = APIRouter(prefix="/showcase", tags=["Showcase Neon"])
 class GridLayoutSave(BaseModel):
     cols: int; rows: int; cells: Dict[str, int]
 
+class TurnOffRequest(BaseModel):
+    KodeLampu: int | None = None
+
 class SavedSelectionCreate(BaseModel):
     name: str; kodes: List[int]
 
@@ -41,10 +44,16 @@ async def _neon_control(file: str, request: ControlRequest):
     return {"status": "success" if sc == len(report) else "partial_success" if sc > 0 else "failed", "summary": {"total": len(report), "success": sc, "failed": len(report) - sc}, "devices": report}
 
 
-async def _neon_turn_off(file: str):
+async def _neon_turn_off(file: str, kode_lampu: int = None):
     devices = read_json(file)
     if not devices:
         return {"status": "no_devices", "devices": []}
+    if kode_lampu is not None:
+        target = next((d for d in devices if d["kode"] == kode_lampu), None)
+        if not target:
+            raise HTTPException(status_code=404, detail=f"Lampu kode {kode_lampu} tidak ditemukan")
+        result = await turn_off_wiz_light(target["ip"])
+        return {"status": result["status"], "device": {**target, **result}}
     tasks = [turn_off_wiz_light(d["ip"]) for d in devices]
     results = await asyncio.gather(*tasks)
     report = [{**devices[i], **r} for i, r in enumerate(results)]
@@ -98,8 +107,9 @@ async def control_showcase(request: ControlRequest):
 
 
 @router.post("/turn-off")
-async def turn_off_showcase():
-    return await _neon_turn_off(SHOWCASE_NEON_FILE)
+async def turn_off_showcase(req: TurnOffRequest = None):
+    kode = req.KodeLampu if req else None
+    return await _neon_turn_off(SHOWCASE_NEON_FILE, kode)
 
 
 # ─── Grid Layout ─────────────────────────────────────────────────────────────

@@ -55,23 +55,11 @@ class RoomControl(BaseModel):
 class BulkControlRequest(BaseModel):
     rooms: List[RoomControl]
 
-class HLRelaySavedSelCreate(BaseModel):
-    """Save a relay selection within a specific room."""
+class HLSavedSelCreate(BaseModel):
+    """Save a relay selection."""
     name: str
     relay_ids: Optional[List[str]] = None
     kodes: Optional[List[str]] = None # Alias for relay_ids
-
-class HLRoomSavedSelCreate(BaseModel):
-    """Save a selection of rooms."""
-    name: str
-    room_ids: Optional[List[str]] = None
-    kodes: Optional[List[str]] = None # Alias for room_ids
-
-class HLRoomGridLayoutSave(BaseModel):
-    """Save a relay grid layout for a specific room."""
-    cols: int
-    rows: int
-    cells: dict  # cellIdx(str) → relayId(str)
 
 # --- AC Device Models (flat structure, no room concept) ---
 class ACDeviceCreate(BaseModel):
