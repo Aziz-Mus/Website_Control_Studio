@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 from typing import Union
 from pydantic import BaseModel, Field
@@ -26,7 +26,7 @@ class DeviceUpdate(BaseModel):
     ip: Optional[str] = None
     nama: Optional[str] = None
 
-# --- Room/Relay Models (Headlights only — AC uses flat ACDevice* models below) ---
+# --- Room/Relay Models (Headlights only ΓÇö AC uses flat ACDevice* models below) ---
 class RoomCreate(BaseModel):
     roomName: str
     espIpAddress: str
@@ -105,7 +105,7 @@ def parse_warna(warna) -> ColorModel:
     raise ValueError("Format Warna tidak valid")
 
 
-# ─── Command Center Models ────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇ Command Center Models ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 class CCControlRequest(BaseModel):
     """Control one or more Command Center ceiling lights."""

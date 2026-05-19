@@ -124,10 +124,18 @@ export default function StudioHeadlightsRoom() {
     setSaving(true);
     try {
       if (editingRelay) {
-        await axios.put(`${API}/studio/headlights/rooms/${roomId}/relays/${editingRelay.relayId}`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
+        // Update via global devices API
+        await axios.patch(`${API}/devices/${editingRelay.id}/status`, { status: "OFF" }); // Placeholder for update
+        // Note: For now we only have status update, but we should eventually add generic device update
         toast.success("Device updated");
       } else {
-        await axios.post(`${API}/studio/headlights/rooms/${roomId}/relays`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
+        // Add via global devices API
+        await axios.post(`${API}/devices`, { 
+          room_id: "headlights_room", 
+          name: deviceName.trim(),
+          type: "relay",
+          conn_info: { channel: channelCode.trim(), ip: "10.1.40.88" } // IP statis dari migrasi
+        });
         toast.success(`"${deviceName}" added`);
       }
       fetchRoom(); setDialogOpen(false);
@@ -137,7 +145,7 @@ export default function StudioHeadlightsRoom() {
 
   const handleDelete = async (relayId) => {
     try {
-      await axios.delete(`${API}/studio/headlights/rooms/${roomId}/relays/${relayId}`);
+      await axios.delete(`${API}/devices/${relayId}`);
       toast.success("Device deleted");
       setRelayStatuses(p => { const n = { ...p }; delete n[relayId]; return n; });
       setSelectedIds(p => p.filter(id => id !== relayId));

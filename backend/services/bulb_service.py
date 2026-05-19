@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import logging
 from pywizlight import wizlight, PilotBuilder
 from services.models import ColorModel
@@ -6,7 +6,7 @@ from services.models import ColorModel
 logger = logging.getLogger(__name__)
 
 class WizService:
-    def __init__(self, ip_address: str, name: str = "Unknown", max_retries: int = 10):
+    def __init__(self, ip_address: str, name: str = "Unknown", max_retries: int = 6):
         self.ip_address = ip_address
         self.name = name
         self.max_retries = max_retries
@@ -15,7 +15,7 @@ class WizService:
         last_exception = None
         for attempt in range(1, self.max_retries + 1):
             try:
-                return await asyncio.wait_for(func(*args, **kwargs), timeout=5.0)
+                return await asyncio.wait_for(func(*args, **kwargs), timeout=3.0)
             except Exception as e:
                 last_exception = e
                 logger.warning(f"Attempt {attempt}/{self.max_retries} failed for {self.name} ({self.ip_address}): {e}")

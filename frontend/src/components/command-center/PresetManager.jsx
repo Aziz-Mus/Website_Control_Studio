@@ -28,7 +28,7 @@ function rgbToHex({ r, g, b }) {
  *   onDelete      : (id) => void
  *   currentSettings: { brightness, rgb?, colortemp? }
  */
-export default function PresetManager({ presets = [], onApply, onSave, onDelete, currentSettings }) {
+export default function PresetManager({ presets = [], onApply, onSave, onDelete, currentSettings, activePresetId = null }) {
   const [newName, setNewName] = useState("");
   const [saving,  setSaving]  = useState(false);
   
@@ -170,8 +170,15 @@ export default function PresetManager({ presets = [], onApply, onSave, onDelete,
             {presets.map((p) => (
               <div
                 key={p.id}
-                className="flex items-center gap-2 p-2 bg-white border border-[#E5E7EB] rounded-md hover:border-[#DA2C38] group transition-colors"
+                className={`flex items-center gap-2 p-2 bg-white border rounded-md group transition-colors
+                  ${activePresetId === p.id
+                    ? "border-green-400 bg-green-50"
+                    : "border-[#E5E7EB] hover:border-[#DA2C38]"}`}
               >
+                {/* Active indicator */}
+                {activePresetId === p.id && (
+                  <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0 animate-pulse" title="Currently active" />
+                )}
                 {/* Color preview swatch in list */}
                 {p.settings?.rgb && (
                   <div className="w-3 h-3 rounded-full border border-gray-100 flex-shrink-0" 

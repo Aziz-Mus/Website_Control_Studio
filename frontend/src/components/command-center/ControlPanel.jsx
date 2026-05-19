@@ -2,8 +2,9 @@ import { Power, PowerOff } from "lucide-react";
 import AdvancedColorPicker from "./AdvancedColorPicker";
 import PresetManager from "./PresetManager";
 import AnimationPanel from "./AnimationPanel";
+import SchedulerPanel from "../shared/SchedulerPanel";
 
-const TABS = ["Color", "Presets", "Animation"];
+const TABS = ["Color", "Presets", "Animation", "Scheduler"];
 
 /**
  * ControlPanel — right-side control panel for Command Center.
@@ -39,9 +40,10 @@ export default function ControlPanel({
   brightness, onBrightnessChange,
   onPowerOn, onPowerOff,
   onColorChange, onApplyColor,
-  presets, onApplyPreset, onSavePreset, onDeletePreset, currentSettings,
+  presets, onApplyPreset, onSavePreset, onDeletePreset, currentSettings, activePresetId = null,
   animations, animState, interval, onIntervalChange,
   selectedIps, onPlayAnim, onStopAnim, onDeleteAnim, onSaveAnim,
+  roomId, selections, devices,
 }) {
   const noSelection = selectedCount === 0;
 
@@ -101,7 +103,7 @@ export default function ControlPanel({
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className={`flex-1 overflow-y-auto ${tab === "Scheduler" ? "p-0" : "p-4"}`}>
         {tab === "Color" && (
           <div className="space-y-3">
             <AdvancedColorPicker
@@ -126,6 +128,7 @@ export default function ControlPanel({
             onSave={onSavePreset}
             onDelete={onDeletePreset}
             currentSettings={currentSettings}
+            activePresetId={activePresetId}
           />
         )}
 
@@ -140,6 +143,15 @@ export default function ControlPanel({
             onStop={onStopAnim}
             onDelete={onDeleteAnim}
             onSaveAnim={onSaveAnim}
+          />
+        )}
+
+        {tab === "Scheduler" && (
+          <SchedulerPanel
+            roomId={roomId}
+            selections={selections}
+            devices={devices}
+            embedded
           />
         )}
       </div>

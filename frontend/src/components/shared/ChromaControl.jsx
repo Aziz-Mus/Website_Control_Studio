@@ -97,7 +97,7 @@ function rgbToHsv(r, g, b) {
   return { h, s, v };
 }
 
-export default function ChromaControl({ onApply, selectedCount = 0, brightness, onBrightnessChange }) {
+export default function ChromaControl({ onApply, selectedCount = 0, brightness, onBrightnessChange, embedded = false }) {
   const [hex, setHex] = useState("#DA2C38");
   const [rgb, setRgb] = useState({ r: 218, g: 44, b: 56 });
   const [hue, setHue] = useState(0);
@@ -286,10 +286,12 @@ export default function ChromaControl({ onApply, selectedCount = 0, brightness, 
   };
 
   return (
-    <div className="bg-white border border-[#E5E7EB] rounded-md p-4 space-y-4" data-testid="chroma-control">
-      <h3 className="text-base font-semibold text-[#1C2025]" style={{ fontFamily: 'Work Sans, sans-serif' }}>
-        Chroma Control
-      </h3>
+    <div className={`space-y-4 ${embedded ? "" : "bg-white border border-[#E5E7EB] rounded-md p-4"}`} data-testid="chroma-control">
+      {!embedded && (
+        <h3 className="text-base font-semibold text-[#1C2025]" style={{ fontFamily: 'Work Sans, sans-serif' }}>
+          Chroma Control
+        </h3>
+      )}
 
       {/* Color picker canvas */}
       <div className="relative">

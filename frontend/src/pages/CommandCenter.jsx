@@ -12,16 +12,18 @@ import ChromaControl from "@/components/shared/ChromaControl";
 import MasterStatus from "@/components/shared/MasterStatus";
 import ControlPanel from "@/components/command-center/ControlPanel";
 
-const API  = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const BASE = `${API}/command-center`;
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BASE = `${API}/command-center`;     // prefix lama (untuk referensi)
+const CTRL = `${API}/control/wiz`;        // endpoint kontrol hardware baru
+const ROOM_ID = "cc_room"
 
-const STORAGE_KEY  = "cc_device_statuses";
+const STORAGE_KEY = "cc_device_statuses";
 const SELECTED_KEY = "cc_selected_ids";
-const VIEW_KEY     = "cc_view_mode";
+const VIEW_KEY = "cc_view_mode";
 const GRIDMODE_KEY = "cc_grid_mode";
 const GRIDCONFIG_KEY = "cc_grid_config";
 const GRIDLAYOUT_KEY = "cc_grid_layout";
-const DISPLAY_KEY    = "cc_display_mode";
+const DISPLAY_KEY = "cc_display_mode";
 
 function loadStorage(key, fallback) {
   try {
@@ -33,53 +35,71 @@ function loadStorage(key, fallback) {
 
 export default function CommandCenter() {
   // ── Devices & selection ───────────────────────────────────────────────────
-  const [devices, setDevices]             = useState([]);
-  const [selectedIds, setSelectedIds]     = useState(() => loadStorage(SELECTED_KEY, []));
+  const [devices, setDevices] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(() => loadStorage(SELECTED_KEY, []));
   const [deviceStatuses, setDeviceStatuses] = useState(() => loadStorage(STORAGE_KEY, {}));
-  const [loading, setLoading]             = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // ── View mode ─────────────────────────────────────────────────────────────
-  const [viewMode, setViewMode]       = useState("grid");
-  const [gridConfig, setGridConfig]   = useState({ cols: 4, rows: 5 });
-  const [gridLayout, setGridLayout]   = useState({});
-  const [gridMode, setGridMode]       = useState(() => loadStorage(GRIDMODE_KEY, "control"));
+  const [viewMode, setViewMode] = useState("grid");
+  const [gridConfig, setGridConfig] = useState({ cols: 4, rows: 5 });
+  const [gridLayout, setGridLayout] = useState({});
+  const [gridMode, setGridMode] = useState(() => loadStorage(GRIDMODE_KEY, "control"));
   const [displayMode, setDisplayMode] = useState(() => loadStorage(DISPLAY_KEY, "detailed"));
-  const [configOpen, setConfigOpen]   = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
 
   // ── Dialogs ───────────────────────────────────────────────────────────────
-  const [dialogOpen, setDialogOpen]     = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState(null);
   const [pendingCellIdx, setPendingCellIdx] = useState(null);
 
   // ── CC extra: presets, animations, saved selections ───────────────────────
-  const [presets, setPresets]           = useState([]);
-  const [savedSelections, setSavedSel]  = useState([]);
-  const [controlTab, setControlTab]     = useState("Color");
-  const [brightness, setBrightness]     = useState(200);
+  const [presets, setPresets] = useState([]);
+  const [savedSelections, setSavedSel] = useState([]);
+  const [controlTab, setControlTab] = useState("Color");
+  const [brightness, setBrightness] = useState(200);
   // Track current color picked by AdvancedColorPicker (updated on every picker change)
-  const [currentColor, setCurrentColor] = useState({ rgb: [218,44,56], mode: "solid" });
-  const [animState, setAnimState]       = useState({ running: false });
-  const [animations, setAnimations]     = useState([]);
+  const [currentColor, setCurrentColor] = useState({ rgb: [218, 44, 56], mode: "solid" });
+  const [animState, setAnimState] = useState({ running: false });
+  const [animations, setAnimations] = useState([]);
+  const [activePresetId, setActivePresetId] = useState(null); // indikator preset yang sedang aktif
 
   // ── Persist ───────────────────────────────────────────────────────────────
-  useEffect(() => { localStorage.setItem(STORAGE_KEY,    JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
-  useEffect(() => { localStorage.setItem(SELECTED_KEY,   JSON.stringify(selectedIds)); },   [selectedIds]);
-  useEffect(() => { localStorage.setItem(GRIDMODE_KEY,    JSON.stringify(gridMode)); },      [gridMode]);
-  useEffect(() => { localStorage.setItem(GRIDCONFIG_KEY, JSON.stringify(gridConfig)); },    [gridConfig]);
-  useEffect(() => { localStorage.setItem(GRIDLAYOUT_KEY, JSON.stringify(gridLayout)); },    [gridLayout]);
-  useEffect(() => { localStorage.setItem(DISPLAY_KEY,    JSON.stringify(displayMode)); },   [displayMode]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
+  useEffect(() => { localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedIds)); }, [selectedIds]);
+  useEffect(() => { localStorage.setItem(GRIDMODE_KEY, JSON.stringify(gridMode)); }, [gridMode]);
+  useEffect(() => { localStorage.setItem(GRIDCONFIG_KEY, JSON.stringify(gridConfig)); }, [gridConfig]);
+  useEffect(() => { localStorage.setItem(GRIDLAYOUT_KEY, JSON.stringify(gridLayout)); }, [gridLayout]);
+  useEffect(() => { localStorage.setItem(DISPLAY_KEY, JSON.stringify(displayMode)); }, [displayMode]);
 
   // ── Fetch devices ─────────────────────────────────────────────────────────
   const fetchDevices = useCallback(async () => {
-    try { const r = await axios.get(`${BASE}/devices`); setDevices(r.data.devices || []); } catch (e) { console.error(e); }
+    try {
+      const r = await axios.get(`${API}/devices?room_id=${ROOM_ID}`);
+      const raw = Array.isArray(r.data) ? r.data : [];
+      const mapped = raw.map(d => ({
+        kode: d.kode,
+        nama: d.name,
+        ip:   d.conn_info?.ip || "",
+        id:   d.id,
+      }));
+      setDevices(mapped);
+      // Init status dari DB (DB sebagai source of truth)
+      const dbStatuses = {};
+      raw.forEach(d => { if (d.status) dbStatuses[d.kode] = d.status; });
+      if (Object.keys(dbStatuses).length > 0) {
+        setDeviceStatuses(prev => ({ ...prev, ...dbStatuses }));
+      }
+    } catch (e) { console.error(e); }
   }, []);
 
   // ── Fetch grid layout (only config, don't overwrite localStorage viewMode) ─
   const fetchGridLayout = useCallback(async () => {
     try {
-      const r = await axios.get(`${BASE}/grid-layout`);
-      setGridConfig({ cols: r.data.cols || 4, rows: r.data.rows || 5 });
-      setGridLayout(r.data.cells || {});
+      const r = await axios.get(`${API}/room/detail?room_id=${ROOM_ID}`);
+      const cfg = r.data.ui_config || {};
+      setGridConfig({ cols: cfg.cols || 4, rows: cfg.rows || 5 });
+      setGridLayout(cfg.cells || {});
     } catch (e) { console.error(e); }
   }, []);
 
@@ -87,12 +107,13 @@ export default function CommandCenter() {
   const fetchExtras = useCallback(async () => {
     try {
       const [pRes, aRes, sRes] = await Promise.all([
-        axios.get(`${BASE}/presets`),
-        axios.get(`${BASE}/animations`),
-        axios.get(`${BASE}/saved-selections`),
+        axios.get(`${API}/presets?room_id=${ROOM_ID}`),
+        axios.get(`${API}/animations`),
+        axios.get(`${API}/selections?room_id=${ROOM_ID}`),
       ]);
       setPresets(pRes.data || []);
-      setAnimations(aRes.data || []);
+      // Backend returns { id, name, steps } — AnimationPanel expects frames
+      setAnimations((aRes.data || []).map(a => ({ ...a, frames: a.steps || a.frames || [] })));
       setSavedSel(sRes.data || []);
     } catch (e) { console.error(e); }
   }, []);
@@ -106,14 +127,18 @@ export default function CommandCenter() {
   // ── Device CRUD ────────────────────────────────────────────────────────────
   const handleAdd = async ({ ip, nama }) => {
     try {
-      const r = await axios.post(`${BASE}/devices`, { ip, nama });
+      const r = await axios.post(`${API}/devices`, {
+        room_id: ROOM_ID,
+        name: nama,
+        conn_info: { ip }
+      });
       toast.success(`"${nama}" added`);
       await fetchDevices();
+
       // Place it in the grid automatically
       if (r.data.device) {
         let cellIdx = pendingCellIdx;
         if (cellIdx === null) {
-          // Find first empty cell
           const usedIndices = new Set(Object.keys(gridLayout).map(Number));
           const totalCells = gridConfig.cols * gridConfig.rows;
           const found = Array.from({ length: totalCells }).findIndex((_, i) => !usedIndices.has(i));
@@ -131,13 +156,24 @@ export default function CommandCenter() {
   };
 
   const handleUpdate = async (kode, data) => {
-    try { await axios.put(`${BASE}/devices/${kode}`, data); toast.success("Updated"); fetchDevices(); }
+    const dev = devices.find(d => d.kode === kode);
+    if (!dev?.id) { toast.error("Device not found"); return; }
+    try {
+      await axios.put(`${API}/devices/${dev.id}`, {
+        name: data.nama,
+        conn_info: { ip: data.ip },
+      });
+      toast.success("Updated");
+      fetchDevices();
+    }
     catch (e) { toast.error("Failed to update"); }
   };
 
   const handleDelete = async (kode) => {
+    const dev = devices.find(d => d.kode === kode);
+    if (!dev?.id) { toast.error("Device not found"); return; }
     try {
-      await axios.delete(`${BASE}/devices/${kode}`);
+      await axios.delete(`${API}/devices/${dev.id}`);
       toast.success("Deleted");
       setSelectedIds(p => p.filter(id => id !== kode));
       setDeviceStatuses(p => { const n = { ...p }; delete n[kode]; return n; });
@@ -150,12 +186,14 @@ export default function CommandCenter() {
   };
 
   // ── Selection ──────────────────────────────────────────────────────────────
-  const handleToggleSelect   = kode => setSelectedIds(p => p.includes(kode) ? p.filter(id => id !== kode) : [...p, kode]);
-  const handleSelectAll      = () => setSelectedIds(selectedIds.length === devices.length ? [] : devices.map(d => d.kode));
+  const handleToggleSelect = kode => setSelectedIds(p => p.includes(kode) ? p.filter(id => id !== kode) : [...p, kode]);
+  const handleSelectAll = () => setSelectedIds(selectedIds.length === devices.length ? [] : devices.map(d => d.kode));
 
   // ── Grid Layout save to backend ───────────────────────────────────────────
   const saveGridLayout = useCallback(async (cells = gridLayout, config = gridConfig) => {
-    try { await axios.put(`${BASE}/grid-layout`, { ...config, cells }); } catch (e) { console.error(e); }
+    try {
+      await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...config, cells });
+    } catch (e) { console.error(e); }
   }, [gridLayout, gridConfig]);
 
   const handleLayoutChange = async (newLayout) => {
@@ -205,56 +243,63 @@ export default function CommandCenter() {
 
     setGridConfig(newConfig);
     setGridLayout(newLayout);
-    try { await axios.put(`${BASE}/grid-layout`, { ...newConfig, cells: newLayout }); }
+    try { await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...newConfig, cells: newLayout }); }
     catch (e) { console.error(e); }
   };
 
   // ── Saved Selections ───────────────────────────────────────────────────────
   const handleSaveSel = async (name, kodes) => {
     try {
-      await axios.post(`${BASE}/saved-selections`, { name, kodes });
+      await axios.post(`${API}/selections`, { room_id: ROOM_ID, name, device_ids: kodes });
       toast.success(`"${name}" saved`);
       fetchExtras();
     } catch (e) { toast.error("Failed to save"); }
   };
   const handleDeleteSel = async (id) => {
-    try { await axios.delete(`${BASE}/saved-selections/${id}`); fetchExtras(); } catch (e) {}
+    try { await axios.delete(`${API}/selections/${id}`); fetchExtras(); } catch (e) { }
   };
   const handleApplySel = (sel) => {
-    const valid = (sel.kodes || []).filter(k => devices.some(d => d.kode === k));
+    const selIds = sel.device_ids || [];
+    // devices.kode adalah integer; selIds bisa integer atau string — pakai String() untuk safe match
+    const valid = devices.filter(d => selIds.some(k => String(d.kode) === String(k))).map(d => d.kode);
     if (sel._action === "deselect") {
-      // Remove only the kodes from this selection
       setSelectedIds(prev => prev.filter(id => !valid.includes(id)));
       toast.success(`"${sel.name}" deselected — ${valid.length} device(s) removed`);
     } else {
-      // Add kodes from this selection to current selection (preventing duplicates)
       setSelectedIds(prev => Array.from(new Set([...prev, ...valid])));
       toast.success(`"${sel.name}" added — ${valid.length} device(s) added to selection`);
     }
   };
 
+
   // ── Light control helpers ─────────────────────────────────────────────────
   // Build ip→kode lookup for mapping control results back to device kodes
   const ipToKode = Object.fromEntries(devices.map(d => [d.ip, d.kode]));
 
-  // Handles both response formats:
-  //   /control  → { results: [{ ip, success }] }
-  //   /turn-off → { devices: [{ kode, status }] }
-  //   /lampu    → { devices: [{ kode, status }] }
+  // Handles response from /api/control/wiz/* endpoints:
+  //   { devices: [{ ip, status, error }] }   ← current format
   const updateFromControlResponse = (data, action) => {
     const ns = {};
     if (data.devices) {
-      // Format: { devices: [{ kode, status: "success"/"failed" }] }
-      data.devices.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; });
+      data.devices.forEach(d => {
+        const kode = ipToKode[d.ip];
+        if (kode !== undefined) ns[kode] = d.status === "success" ? action : "failed";
+      });
     } else if (data.results) {
-      // Format: { results: [{ ip, success: true/false }] }
       data.results.forEach(r => {
         const kode = ipToKode[r.ip];
         if (kode !== undefined) ns[kode] = r.success ? action : "failed";
       });
     }
     setDeviceStatuses(p => ({ ...p, ...ns }));
-
+    // Persist status ke database
+    const devMap = Object.fromEntries(devices.map(d => [d.kode, d.id]));
+    Promise.allSettled(
+      Object.entries(ns).map(([kode, st]) => {
+        const devId = devMap[Number(kode)];
+        return devId ? axios.patch(`${API}/devices/${devId}/status`, { status: st }) : Promise.resolve();
+      })
+    );
     const fc = Object.values(ns).filter(s => s === "failed").length;
     const sc = Object.values(ns).filter(s => s !== "failed").length;
     if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} failed`);
@@ -276,15 +321,15 @@ export default function CommandCenter() {
     setLoading(true);
     const ips = selectedIps.length > 0 ? selectedIps : devices.map(d => d.ip);
     // Resolve color from opts or tracked currentColor
-    const color  = opts.rgb ?? (currentColor.rgb ? { r: currentColor.rgb[0], g: currentColor.rgb[1], b: currentColor.rgb[2] } : null);
+    const color = opts.rgb ?? (currentColor.rgb ? { r: currentColor.rgb[0], g: currentColor.rgb[1], b: currentColor.rgb[2] } : null);
     const colorA = Array.isArray(opts.rgb) ? opts.rgb : (color ? [color.r, color.g, color.b] : currentColor.rgb);
-    const br255  = opts.brightness ?? brightness;
-    const br100  = Math.round(br255 / 255 * 100);   // CCControlRequest expects 0-100
+    const br255 = opts.brightness ?? brightness;
+    const br100 = Math.round(br255 / 255 * 100);   // CCControlRequest expects 0-100
     const payload = opts.sceneId
       ? { action: "on", ips, colortemp: opts.sceneId, brightness: br100 }
       : { action: "on", ips, rgb: colorA, brightness: br100 };
     try {
-      const r = await axios.post(`${BASE}/control`, payload);
+      const r = await axios.post(`${CTRL}/lampu`, payload);
       updateFromControlResponse(r.data, "on");
     } catch (e) { toast.error("Failed"); }
     setLoading(false);
@@ -300,36 +345,39 @@ export default function CommandCenter() {
   const handleApplyPreset = async (preset) => {
     if (!selectedIds.length && selectedIps.length === 0) { toast.error("Select devices first"); return; }
     const rgb = preset.settings?.rgb;
-    const br  = preset.settings?.brightness ?? 100;   // already 0-100
+    const br = preset.settings?.brightness ?? 100;
     if (!rgb) return;
     const ips = selectedIps.length > 0 ? selectedIps : devices.map(d => d.ip);
     try {
-      const r = await axios.post(`${BASE}/control`, {
-        action: "on", ips, rgb, brightness: br,        // send 0-100 directly
-      });
+      const r = await axios.post(`${CTRL}/lampu`, { action: "on", ips, rgb, brightness: br });
       updateFromControlResponse(r.data, "on");
+      setActivePresetId(preset.id);  // tandai preset aktif
     } catch (e) { toast.error("Failed to apply preset"); }
   };
 
   const handleSavePreset = async (name, settings) => {
-    try { await axios.post(`${BASE}/presets`, { name, settings }); toast.success(`Preset "${name}" saved`); fetchExtras(); }
+    try {
+      await axios.post(`${API}/presets`, { room_id: ROOM_ID, name, settings });
+      toast.success(`Preset "${name}" saved`);
+      fetchExtras();
+    }
     catch (e) { toast.error("Failed to save preset"); }
   };
   const handleDeletePreset = async (id) => {
-    try { await axios.delete(`${BASE}/presets/${id}`); fetchExtras(); } catch (e) {}
+    try { await axios.delete(`${API}/presets/${id}`); fetchExtras(); } catch (e) { }
   };
 
   // ── Animation handlers ────────────────────────────────────────────────────
   const handlePlayAnim = async (anim) => {
-    try { await axios.post(`${BASE}/animation/start`, { ...anim, ips: selectedIps }); toast.success(`Animation "${anim.name}" started`); }
+    try { await axios.post(`${CTRL}/animation/start`, { ...anim, ips: selectedIps }); toast.success(`Animation "${anim.name}" started`); }
     catch (e) { toast.error("Failed"); }
   };
   const handleStopAnim = async () => {
-    try { await axios.post(`${BASE}/animation/stop`); } catch (e) {}
+    try { await axios.post(`${CTRL}/animation/stop`); } catch (e) { }
   };
   const handleSaveAnim = async (name, frames) => {
     try {
-      await axios.post(`${BASE}/animations`, { name, frames });
+      await axios.post(`${API}/animations`, { name, steps: frames });
       toast.success(`Animation "${name}" saved`);
       fetchExtras();
     } catch (e) {
@@ -338,28 +386,30 @@ export default function CommandCenter() {
     }
   };
   const handleDeleteAnim = async (id) => {
-    try { await axios.delete(`${BASE}/animations/${id}`); fetchExtras(); } catch (e) {}
+    try { await axios.delete(`${API}/animations/${id}`); fetchExtras(); } catch (e) { }
   };
 
   // ── Activate / Deactivate All ─────────────────────────────────────────────
   const handleActivateAll = async () => {
     if (!devices.length) return; setLoading(true);
     try {
-      const r = await axios.post(`${BASE}/control`, { action: "color", ips: devices.map(d => d.ip), rgb: [255,255,255], brightness });
+      const r = await axios.post(`${CTRL}/lampu`, { action: "on", ips: devices.map(d => d.ip), rgb: [255, 255, 255], brightness });
       updateFromControlResponse(r.data, "on");
     } catch (e) { toast.error("Failed"); }
     setLoading(false);
   };
   const handleDeactivateAll = async () => {
     if (!devices.length) return; setLoading(true);
+    // If devices are selected, only turn off selected; otherwise turn off all
+    const ips = selectedIps.length > 0 ? selectedIps : devices.map(d => d.ip);
     try {
-      const r = await axios.post(`${BASE}/turn-off`);
+      const r = await axios.post(`${CTRL}/turn-off`, { action: "off", ips });
       updateFromControlResponse(r.data, "off");
     } catch (e) { toast.error("Failed"); }
     setLoading(false);
   };
 
-  const onCount     = Object.values(deviceStatuses).filter(s => s === "on").length;
+  const onCount = Object.values(deviceStatuses).filter(s => s === "on").length;
   const failedCount = Object.values(deviceStatuses).filter(s => s === "failed").length;
 
   return (
@@ -396,10 +446,9 @@ export default function CommandCenter() {
               <div className="flex items-center gap-2 flex-wrap">
                 {/* View mode toggle */}
                 <div className="flex items-center border border-[#E5E7EB] rounded-md overflow-hidden">
-                  {[["list","List",List],["grid","Grid",Grid3X3]].map(([mode, label, Icon]) => (
+                  {[["list", "List", List], ["grid", "Grid", Grid3X3]].map(([mode, label, Icon]) => (
                     <button key={mode} onClick={() => setViewMode(mode)}
-                      className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                        viewMode === mode ? "bg-[#DA2C38] text-white" : "text-[#637083] hover:bg-[#F3F4F6]"}`}>
+                      className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${viewMode === mode ? "bg-[#DA2C38] text-white" : "text-[#637083] hover:bg-[#F3F4F6]"}`}>
                       <Icon className="w-3.5 h-3.5" />{label}
                     </button>
                   ))}
@@ -408,10 +457,9 @@ export default function CommandCenter() {
                 {/* Grid table specific controls */}
                 {viewMode === "grid" && <>
                   <div className="flex items-center border border-[#E5E7EB] rounded-md overflow-hidden">
-                    {[["edit","Edit",Pencil],["control","Control",Check]].map(([mode, label, Icon]) => (
+                    {[["edit", "Edit", Pencil], ["control", "Control", Check]].map(([mode, label, Icon]) => (
                       <button key={mode} onClick={() => setGridMode(mode)}
-                        className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                          gridMode === mode ? "bg-[#1C2025] text-white" : "text-[#637083] hover:bg-[#F3F4F6]"}`}>
+                        className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${gridMode === mode ? "bg-[#1C2025] text-white" : "text-[#637083] hover:bg-[#F3F4F6]"}`}>
                         <Icon className="w-3.5 h-3.5" />{label}
                       </button>
                     ))}
@@ -423,19 +471,16 @@ export default function CommandCenter() {
                   {/* Show Detail toggle — pill style */}
                   <button
                     onClick={() => setDisplayMode(displayMode === "detailed" ? "icon" : "detailed")}
-                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all select-none ${
-                      displayMode === "detailed"
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-all select-none ${displayMode === "detailed"
                         ? "bg-[#1C2025] border-[#1C2025] text-white"
                         : "border-[#E5E7EB] text-[#637083] hover:bg-[#F3F4F6]"
-                    }`}
+                      }`}
                   >
                     {/* Pill switch */}
-                    <span className={`relative inline-flex items-center w-7 h-4 rounded-full transition-colors flex-shrink-0 ${
-                      displayMode === "detailed" ? "bg-[#DA2C38]" : "bg-[#D1D5DB]"
-                    }`}>
-                      <span className={`absolute w-3 h-3 rounded-full bg-white shadow transition-transform ${
-                        displayMode === "detailed" ? "translate-x-3.5" : "translate-x-0.5"
-                      }`} />
+                    <span className={`relative inline-flex items-center w-7 h-4 rounded-full transition-colors flex-shrink-0 ${displayMode === "detailed" ? "bg-[#DA2C38]" : "bg-[#D1D5DB]"
+                      }`}>
+                      <span className={`absolute w-3 h-3 rounded-full bg-white shadow transition-transform ${displayMode === "detailed" ? "translate-x-3.5" : "translate-x-0.5"
+                        }`} />
                     </span>
                     Detail
                   </button>
@@ -483,7 +528,7 @@ export default function CommandCenter() {
               onTabChange={setControlTab}
               brightness={brightness}
               onBrightnessChange={setBrightness}
-              onPowerOn={() => handleApplyColor({ rgb: [255,255,255], brightness })}
+              onPowerOn={() => handleApplyColor({ rgb: [255, 255, 255], brightness })}
               onPowerOff={handleDeactivateAll}
               onColorChange={handleColorChange}
               onApplyColor={handleApplyColorNoArg}
@@ -492,15 +537,19 @@ export default function CommandCenter() {
               onSavePreset={handleSavePreset}
               onDeletePreset={handleDeletePreset}
               currentSettings={{ is_on: true, brightness: Math.round(brightness / 255 * 100) }}
+              activePresetId={activePresetId}
               animations={animations}
               animState={animState}
               interval={2000}
-              onIntervalChange={() => {}}
+              onIntervalChange={() => { }}
               selectedIps={selectedIps}
               onPlayAnim={handlePlayAnim}
               onStopAnim={handleStopAnim}
               onDeleteAnim={handleDeleteAnim}
               onSaveAnim={handleSaveAnim}
+              roomId={ROOM_ID}
+              selections={savedSelections}
+              devices={devices}
             />
 
             <MasterStatus total={devices.length} onCount={onCount} failedCount={failedCount} />

@@ -1,5 +1,5 @@
-"""
-Command Center Service — WiZ Ceiling Light Control
+﻿"""
+Command Center Service ΓÇö WiZ Ceiling Light Control
 Adapted from Flask app.py to FastAPI async-native pattern.
 43 ceiling lights in a grid topology.
 """
@@ -16,7 +16,7 @@ if sys.platform == "win32":
 
 from pywizlight import PilotBuilder, wizlight
 
-# ─── Persistent Async Loop (shared singleton) ──────────────────────────────────
+# ΓöÇΓöÇΓöÇ Persistent Async Loop (shared singleton) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 _wiz_loop = asyncio.new_event_loop()
 _loop_thread = threading.Thread(
     target=lambda: (_wiz_loop.run_forever()),
@@ -24,10 +24,10 @@ _loop_thread = threading.Thread(
 )
 _loop_thread.start()
 
-# ─── Animation State ─────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇ Animation State ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 ANIM_STATE = {"running": False, "name": "", "task": None}
 
-# ─── Light Topology (43 Lights) ───────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇ Light Topology (43 Lights) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 _LIGHTS_FILE = Path(__file__).parent.parent / "data" / "command_center" / "lights.json"
 
 def _load_lights() -> list:
@@ -37,7 +37,7 @@ def _load_lights() -> list:
     except Exception:
         return []
 
-# Module-level cache — reloaded on each /lights or /status request via get_lights()
+# Module-level cache ΓÇö reloaded on each /lights or /status request via get_lights()
 LIGHTS: list = _load_lights()
 
 
@@ -47,7 +47,7 @@ def get_lights() -> list:
     LIGHTS = _load_lights()
     return LIGHTS
 
-# ─── Low-level WiZ Helpers (run on the background loop) ──────────────────────
+# ΓöÇΓöÇΓöÇ Low-level WiZ Helpers (run on the background loop) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 async def _control_single(ip: str, action: str, brightness=None, rgb=None, colortemp=None):
     """Control one WiZ light. brightness 0-100 (%), rgb tuple, colortemp 2200-6500."""
@@ -100,7 +100,7 @@ async def _get_status(ip: str) -> dict:
         await light.async_close()
 
 
-# ─── Public API (called from FastAPI routes via run_coroutine_threadsafe) ─────
+# ΓöÇΓöÇΓöÇ Public API (called from FastAPI routes via run_coroutine_threadsafe) ΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 def run_on_wiz_loop(coro):
     """Run a coroutine on the background WiZ event loop and block until done."""
@@ -129,7 +129,7 @@ def get_all_status() -> list:
 
 
 
-# ─── Animation Engine ─────────────────────────────────────────────────────────
+# ΓöÇΓöÇΓöÇ Animation Engine ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 async def _run_animation_loop(frames: list, interval: float, ips: list):
     step = 0

@@ -11,8 +11,12 @@ import RelayModuleGrid from "@/components/shared/RelayModuleGrid";
 import SavedSelectionPanel from "@/components/shared/SavedSelectionPanel";
 import GridConfigDialog from "@/components/shared/GridConfigDialog";
 import SelectedControlPanel from "@/components/shared/SelectedControlPanel";
+import SchedulerPanel from "@/components/shared/SchedulerPanel";
+import useDeviceStatusWS from "@/hooks/useDeviceStatusWS";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const HL_BASE =  `${API}/studio/headlights`;
+const ROOM_ID = "headlights_room"
 
 function loadStorage(key, fallback) {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
@@ -49,6 +53,15 @@ export default function StudioHeadlights() {
   const [savedSels,         setSavedSels]        = useState([]);
   const [gridLoaded,        setGridLoaded]       = useState(false);
 
+  // ── WebSocket: Real-time device status from scheduler ────────────────────
+  useDeviceStatusWS(ROOM_ID, (data) => {
+    const ns = {};
+    (data.devices || []).forEach(d => { ns[d.id] = d.status; });
+    if (Object.keys(ns).length > 0) {
+      setRelayStatuses(prev => ({ ...prev, ...ns }));
+    }
+  });
+
   // Persist state
   useEffect(() => { localStorage.setItem("hl_relay_statuses", JSON.stringify(relayStatuses)); }, [relayStatuses]);
   useEffect(() => { localStorage.setItem("hl_selected_ids",   JSON.stringify(selectedIds));   }, [selectedIds]);
@@ -58,24 +71,40 @@ export default function StudioHeadlights() {
   // ── Fetch config (ESP IP + relays) ────────────────────────────────────────
   const fetchConfig = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/studio/headlights/config`);
-      setEspIp(res.data.espIpAddress || "");
-      setRelays(res.data.relays || []);
+      const res = await axios.get(`${API}/devices?room_id=${ROOM_ID}`);
+      const raw = Array.isArray(res.data) ? res.data : [];
+      if (raw.length > 0) {
+        setEspIp(raw[0].conn_info?.ip || "");
+      }
+      const mappedRelays = raw.map(d => ({
+        relayId:     d.id,
+        deviceName:  d.name,
+        channelCode: d.conn_info?.channel || "",
+        ip:          d.conn_info?.ip || "",
+      }));
+      setRelays(mappedRelays);
+      // Init status dari database (overwrite localStorage jika ada data DB)
+      const dbStatuses = {};
+      raw.forEach(d => { if (d.status) dbStatuses[d.id] = d.status; });
+      if (Object.keys(dbStatuses).length > 0) {
+        setRelayStatuses(prev => ({ ...prev, ...dbStatuses }));
+      }
     } catch { console.error("Failed to fetch config"); }
   }, []);
 
   const fetchGridLayout = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/studio/headlights/grid-layout`);
-      setGridConfig({ cols: res.data.cols || 4, rows: res.data.rows || 5 });
-      setGridLayout(res.data.cells || {});
+      const res = await axios.get(`${API}/room/detail?room_id=${ROOM_ID}`);
+      const cfg = res.data.ui_config || {};
+      setGridConfig({ cols: cfg.cols || 4, rows: cfg.rows || 5 });
+      setGridLayout(cfg.cells || {});
       setGridLoaded(true);
     } catch { setGridLoaded(true); }
   }, []);
 
   const fetchSavedSels = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/studio/headlights/saved-selections`);
+      const res = await axios.get(`${API}/selections?room_id=${ROOM_ID}`);
       setSavedSels(res.data || []);
     } catch {}
   }, []);
@@ -105,7 +134,7 @@ export default function StudioHeadlights() {
             emptyIdx++;
           }
         });
-        axios.put(`${API}/studio/headlights/grid-layout`, { ...gridConfig, cells: newLayout }).catch(() => {});
+        axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...gridConfig, cells: newLayout }).catch(() => {});
         return newLayout;
       });
     } else {
@@ -120,10 +149,18 @@ export default function StudioHeadlights() {
     if (!ipInput.trim()) return;
     setSaving(true);
     try {
-      await axios.put(`${API}/studio/headlights/config`, { espIpAddress: ipInput.trim() });
+      // Update IP di semua relay yang ada di room ini
+      await Promise.all(
+        relays.map(r =>
+          axios.put(`${API}/devices/${r.relayId}`, {
+            conn_info: { ip: ipInput.trim() }
+          })
+        )
+      );
       setEspIp(ipInput.trim());
       toast.success("ESP IP updated");
       setIpDialogOpen(false);
+      fetchConfig();
     } catch { toast.error("Failed to update IP"); }
     setSaving(false);
   };
@@ -138,10 +175,21 @@ export default function StudioHeadlights() {
     setSaving(true);
     try {
       if (editingRelay) {
-        await axios.put(`${API}/studio/headlights/relays/${editingRelay.relayId}`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
+        // Update nama dan channel via PUT /api/devices/{id}
+        await axios.put(`${API}/devices/${editingRelay.relayId}`, {
+          name:      deviceName.trim(),
+          conn_info: { channel: channelCode.trim(), ip: espIp }
+        });
         toast.success("Device updated");
       } else {
-        await axios.post(`${API}/studio/headlights/relays`, { deviceName: deviceName.trim(), channelCode: channelCode.trim() });
+        // Add relay baru ke database
+        const ip = espIp || "10.1.40.88";
+        await axios.post(`${API}/devices`, {
+          room_id:   ROOM_ID,
+          name:      deviceName.trim(),
+          type:      "relay",
+          conn_info: { channel: channelCode.trim(), ip }
+        });
         toast.success(`"${deviceName}" added`);
       }
       fetchConfig(); setDialogOpen(false);
@@ -151,21 +199,23 @@ export default function StudioHeadlights() {
 
   const handleDelete = async (relayId) => {
     try {
-      await axios.delete(`${API}/studio/headlights/relays/${relayId}`);
+      // relayId = d.id dari DB (e.g. "hl_rl01" atau "headlights_room_xxx")
+      await axios.delete(`${API}/devices/${relayId}`);
       toast.success("Device deleted");
       setRelayStatuses(p => { const n = { ...p }; delete n[relayId]; return n; });
       setSelectedIds(p => p.filter(id => id !== relayId));
       const newLayout = Object.fromEntries(Object.entries(gridLayout).filter(([, v]) => v !== relayId));
       setGridLayout(newLayout);
-      await axios.put(`${API}/studio/headlights/grid-layout`, { ...gridConfig, cells: newLayout });
+      await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...gridConfig, cells: newLayout });
       fetchConfig();
     } catch { toast.error("Failed to delete"); }
   };
 
+
   // ── Grid Layout ───────────────────────────────────────────────────────────
   const handleLayoutChange = async (newLayout) => {
     setGridLayout(newLayout);
-    try { await axios.put(`${API}/studio/headlights/grid-layout`, { ...gridConfig, cells: newLayout }); } catch {}
+    try { await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...gridConfig, cells: newLayout }); } catch {}
   };
 
   const handleGridConfigConfirm = async ({ cols, rows }) => {
@@ -203,7 +253,7 @@ export default function StudioHeadlights() {
 
     setGridConfig(newConfig);
     setGridLayout(newLayout);
-    try { await axios.put(`${API}/studio/headlights/grid-layout`, { ...newConfig, cells: newLayout }); } catch {}
+    try { await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...newConfig, cells: newLayout }); } catch {}
   };
 
   // ── Selection ─────────────────────────────────────────────────────────────
@@ -213,15 +263,15 @@ export default function StudioHeadlights() {
   // ── Saved Selections ──────────────────────────────────────────────────────
   const handleSaveSel  = async (name, ids) => {
     try {
-      await axios.post(`${API}/studio/headlights/saved-selections`, { name, kodes: ids });
+      await axios.post(`${API}/selections`, { room_id: ROOM_ID, name, device_ids: ids });
       toast.success(`"${name}" saved`);
       fetchSavedSels();
     } catch { toast.error("Failed to save selection"); }
   };
-  const handleDeleteSel = async (id) => { try { await axios.delete(`${API}/studio/headlights/saved-selections/${id}`); fetchSavedSels(); } catch {} };
+  const handleDeleteSel = async (id) => { try { await axios.delete(`${API}/selections/${id}`); fetchSavedSels(); } catch {} };
   const handleApplySel  = (sel) => {
-    const ids   = sel.relay_ids || sel.kodes || [];
-    const valid = ids.filter(id => relays.some(r => r.relayId === id));
+    const ids   = sel.device_ids || sel.relay_ids || sel.kodes || [];
+    const valid = ids.filter(id => relays.some(r => r.relayId === id || String(r.relayId) === String(id)));
     if (sel._action === "deselect") {
       setSelectedIds(prev => prev.filter(id => !valid.includes(id)));
       toast.success(`"${sel.name}" deselected`);
@@ -230,20 +280,31 @@ export default function StudioHeadlights() {
       toast.success(`"${sel.name}" applied — ${valid.length} selected`);
     }
   };
-  const adaptedSels = savedSels.map(s => ({ ...s, kodes: s.relay_ids || s.kodes || [] }));
+  const adaptedSels = savedSels.map(s => ({ ...s, device_ids: s.device_ids || s.relay_ids || s.kodes || [] }));
 
-  // ── Relay Control ─────────────────────────────────────────────────────────
+  // ── Relay Control ────────────────────────────────────────────────────────
   const controlRelays = async (targetRelays, action) => {
     if (!targetRelays.length) return;
     if (!espIp) { toast.error("ESP IP not configured"); return; }
     setLoading(true);
-    const ep      = action === "on" ? `${API}/studio/headlights/control` : `${API}/studio/headlights/deactivate`;
-    const payload = { espIpAddress: espIp, relays: targetRelays.map(r => ({ relayId: r.relayId, channelCode: r.channelCode })) };
+    const power = action === "on" ? "ON" : "OFF";
+    const relaysPayload = targetRelays.map(r => ({ channel_code: r.channelCode, power }));
     try {
-      const res = await axios.post(ep, payload);
-      const ns  = {};
-      (res.data.relays || []).forEach(rl => { ns[rl.relayId] = rl.status === "success" ? action : "failed"; });
+      const res = await axios.post(`${API}/control/relay/bulk`, {
+        esp_ip: espIp,
+        relays: relaysPayload,
+      });
+      // Map result back to relayId statuses
+      const ns = {};
+      const overallOk = res.data.status === "success";
+      targetRelays.forEach(r => { ns[r.relayId] = overallOk ? action : "failed"; });
       setRelayStatuses(p => ({ ...p, ...ns }));
+      // Persist status ke database
+      await Promise.allSettled(
+        Object.entries(ns).map(([relayId, st]) =>
+          axios.patch(`${API}/devices/${relayId}/status`, { status: st })
+        )
+      );
       const fc = Object.values(ns).filter(s => s === "failed").length;
       const sc = Object.values(ns).filter(s => s !== "failed").length;
       if (fc > 0 && sc > 0) toast.warning(`${sc} ok, ${fc} failed`);
@@ -414,6 +475,13 @@ export default function StudioHeadlights() {
               </div>
               <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-[#10B981]" strokeWidth={1.5} /><span className="text-xs text-[#10B981] font-medium">ARRAYS NOMINAL</span></div>
             </div>
+
+            {/* Scheduler */}
+            <SchedulerPanel
+              roomId={ROOM_ID}
+              selections={adaptedSels}
+              devices={relays.map(r => ({ id: r.relayId, name: r.deviceName, kode: r.relayId }))}
+            />
           </div>
         </div>
       </div>

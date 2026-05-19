@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input";
 /**
  * SavedSelectionPanel
  * Props:
- *   selections   : [{ id, name, kodes }]
+ *   selections   : [{ id, name, device_ids }]   — device_ids berisi integer kode
  *   selectedIds  : current selected kodes (numbers)
  *   onSave       : (name, kodes) => void
- *   onApply      : (sel) => void   — receives selection and isSelecting boolean
+ *   onApply      : (sel) => void   — receives { ...sel, _action: "select"|"deselect" }
  *   onDelete     : (id) => void
  */
 export default function SavedSelectionPanel({ selections = [], selectedIds = [], onSave, onApply, onDelete }) {
@@ -26,21 +26,29 @@ export default function SavedSelectionPanel({ selections = [], selectedIds = [],
     setSaving(false);
   };
 
-  // Check if a saved selection is currently fully active (all its kodes are in selectedIds)
+  // Normalkan device_ids ke array (support integer kode dan string relayId)
+  const getKodes = (sel) => sel.device_ids || sel.kodes || [];
+
+  // Cek apakah seluruh kode dari sel sudah ada di selectedIds (perbandingan string-safe)
   const isSelActive = (sel) => {
-    if (!sel.kodes || sel.kodes.length === 0) return false;
-    return sel.kodes.every(k => selectedIds.includes(k));
+    const kodes = getKodes(sel);
+    if (kodes.length === 0) return false;
+    return kodes.every(k => selectedIds.some(s => String(s) === String(k)));
   };
 
-  // Toggle: if active → deselect all its kodes; if not active → select its kodes
+  // Cek apakah sebagian kode sudah ada (partial active)
+  const isSelPartial = (sel) => {
+    const kodes = getKodes(sel);
+    if (kodes.length === 0) return false;
+    const someIn  = kodes.some(k => selectedIds.some(s => String(s) === String(k)));
+    const allIn   = kodes.every(k => selectedIds.some(s => String(s) === String(k)));
+    return someIn && !allIn;
+  };
+
+  // Toggle: if active → deselect; if not active → select
   const handleToggleSel = (sel) => {
     const active = isSelActive(sel);
-    if (active) {
-      // Deselect only the kodes from this selection
-      onApply?.({ ...sel, _action: "deselect" });
-    } else {
-      onApply?.({ ...sel, _action: "select" });
-    }
+    onApply?.({ ...sel, device_ids: getKodes(sel), _action: active ? "deselect" : "select" });
   };
 
   return (
@@ -82,20 +90,33 @@ export default function SavedSelectionPanel({ selections = [], selectedIds = [],
           <div className={`space-y-1.5 ${selections.length > MAX_VISIBLE ? "max-h-[200px] overflow-y-auto pr-1" : ""}`}
             style={selections.length > MAX_VISIBLE ? { scrollbarWidth: "thin" } : undefined}>
             {selections.map(sel => {
-              const active = isSelActive(sel);
+              const active  = isSelActive(sel);
+              const partial = isSelPartial(sel);
+              const kodeCount = getKodes(sel).length;
               return (
                 <div key={sel.id}
                   className={`flex items-center gap-2 px-3 py-2 rounded-md border transition-colors group cursor-pointer ${
                     active
                       ? "border-[#DA2C38] bg-red-50"
+                      : partial
+                      ? "border-yellow-400 bg-yellow-50"
                       : "border-[#E5E7EB] hover:border-[#DA2C38]"
                   }`}
                   onClick={() => handleToggleSel(sel)}>
+                  {/* Indicator dot */}
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${
+                    active ? "bg-[#DA2C38] animate-pulse" : partial ? "bg-yellow-400" : "bg-[#E5E7EB]"
+                  }`} />
                   <div className="flex-1 text-left">
-                    <p className={`text-xs font-medium ${active ? "text-[#DA2C38]" : "text-[#1C2025]"}`}>{sel.name}</p>
-                    <p className="text-[10px] text-[#9CA3AF]">{sel.kodes?.length ?? 0} device(s)</p>
+                    <p className={`text-xs font-medium ${active ? "text-[#DA2C38]" : partial ? "text-yellow-700" : "text-[#1C2025]"}`}>
+                      {sel.name}
+                    </p>
+                    <p className="text-[10px] text-[#9CA3AF]">
+                      {kodeCount} device(s)
+                      {partial && <span className="text-yellow-600 ml-1">· partial</span>}
+                    </p>
                   </div>
-                  <div className={`flex items-center gap-1 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-100"} transition-opacity`}>
+                  <div className={`flex items-center gap-1 ${active || partial ? "opacity-100" : "opacity-0 group-hover:opacity-100"} transition-opacity`}>
                     <button
                       className={`p-1 rounded ${active ? "bg-[#DA2C38] text-white" : "hover:bg-green-50 text-[#10B981]"}`}
                       title={active ? "Deselect" : "Apply selection"}

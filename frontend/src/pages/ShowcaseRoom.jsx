@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, List, Grid3X3, Settings2, Pencil, Check } from "lucide-react";
+import { Plus, List, Grid3X3, Settings2, Pencil, Check, Power, PowerOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import axios from "axios";
@@ -10,9 +10,13 @@ import AddLightDialog from "@/components/shared/AddLightDialog";
 import GridConfigDialog from "@/components/shared/GridConfigDialog";
 import SavedSelectionPanel from "@/components/shared/SavedSelectionPanel";
 import SelectedControlPanel from "@/components/shared/SelectedControlPanel";
+import SchedulerPanel from "@/components/shared/SchedulerPanel";
+import useDeviceStatusWS from "@/hooks/useDeviceStatusWS";
 
-const API  = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const BASE = `${API}/showcase`;
+const API     = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BASE    = `${API}/showcase`;
+const CTRL    = `${API}/control/wiz`;   // hardware control baru
+const ROOM_ID = "showcase_room"
 const STORAGE_KEY  = "showcase_device_statuses";
 const SELECTED_KEY = "showcase_selected_ids";
 const VIEW_KEY     = "showcase_view_mode";
@@ -47,6 +51,16 @@ export default function ShowcaseRoom() {
   const [pendingCellIdx, setPendingCellIdx] = useState(null);
   const [savedSelections, setSavedSel]    = useState([]);
   const [gridLoaded, setGridLoaded]       = useState(false);
+  const [controlTab, setControlTab]       = useState("Color");
+
+  // ── WebSocket: Real-time device status from scheduler ────────────────────
+  useDeviceStatusWS(ROOM_ID, (data) => {
+    const ns = {};
+    (data.devices || []).forEach(d => { ns[d.kode] = d.status; });
+    if (Object.keys(ns).length > 0) {
+      setDeviceStatuses(prev => ({ ...prev, ...ns }));
+    }
+  });
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY,    JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
   useEffect(() => { localStorage.setItem(SELECTED_KEY,   JSON.stringify(selectedIds)); },   [selectedIds]);
@@ -56,20 +70,38 @@ export default function ShowcaseRoom() {
   useEffect(() => { localStorage.setItem(DISPLAY_KEY,    JSON.stringify(displayMode)); },   [displayMode]);
 
   const fetchDevices = useCallback(async () => {
-    try { const r = await axios.get(`${BASE}/devices`); setDevices(r.data.devices || []); } catch {}
+    try { 
+      const r = await axios.get(`${API}/devices?room_id=${ROOM_ID}`);
+      const raw = Array.isArray(r.data) ? r.data : [];
+      const mapped = raw.map(d => ({
+        kode: d.kode,
+        nama: d.name,
+        name: d.name,
+        ip:   d.conn_info?.ip || "",
+        id:   d.id,
+      }));
+      setDevices(mapped);
+      // Init status dari DB (DB sebagai source of truth)
+      const dbStatuses = {};
+      raw.forEach(d => { if (d.status) dbStatuses[d.kode] = d.status; });
+      if (Object.keys(dbStatuses).length > 0) {
+        setDeviceStatuses(prev => ({ ...prev, ...dbStatuses }));
+      }
+    } catch {}
   }, []);
 
   const fetchGridLayout = useCallback(async () => {
     try {
-      const r = await axios.get(`${BASE}/grid-layout`);
-      setGridConfig({ cols: r.data.cols || 4, rows: r.data.rows || 5 });
-      setGridLayout(r.data.cells || {});
+      const r = await axios.get(`${API}/room/detail?room_id=${ROOM_ID}`);
+      const cfg = r.data.ui_config || {};
+      setGridConfig({ cols: cfg.cols || 4, rows: cfg.rows || 5 });
+      setGridLayout(cfg.cells || {});
       setGridLoaded(true);
     } catch { setGridLoaded(true); }
   }, []);
 
   const fetchSavedSel = useCallback(async () => {
-    try { const r = await axios.get(`${BASE}/saved-selections`); setSavedSel(r.data || []); } catch {}
+    try { const r = await axios.get(`${API}/selections?room_id=${ROOM_ID}`); setSavedSel(r.data || []); } catch {}
   }, []);
 
   useEffect(() => { fetchDevices(); fetchGridLayout(); fetchSavedSel(); }, [fetchDevices, fetchGridLayout, fetchSavedSel]);
@@ -98,7 +130,7 @@ export default function ShowcaseRoom() {
             emptyIdx++;
           }
         });
-        axios.put(`${BASE}/grid-layout`, { ...gridConfig, cells: newLayout }).catch(() => {});
+        axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...gridConfig, cells: newLayout }).catch(() => {});
         return newLayout;
       });
     } else {
@@ -109,7 +141,11 @@ export default function ShowcaseRoom() {
   /* ── Device CRUD ──────────────────────────────────────────────────────── */
   const handleAdd = async ({ ip, nama }) => {
     try {
-      const r = await axios.post(`${BASE}/devices`, { ip, nama });
+      const r = await axios.post(`${API}/devices`, { 
+        room_id: ROOM_ID, 
+        name: nama, 
+        conn_info: { ip } 
+      });
       toast.success(`"${nama}" added`);
       await fetchDevices();
       if (r.data.device) {
@@ -123,7 +159,7 @@ export default function ShowcaseRoom() {
         if (cellIdx !== null) {
           const newLayout = { ...gridLayout, [String(cellIdx)]: r.data.device.kode };
           setGridLayout(newLayout);
-          await axios.put(`${BASE}/grid-layout`, { ...gridConfig, cells: newLayout });
+          await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...gridConfig, cells: newLayout });
         }
         setPendingCellIdx(null);
       }
@@ -131,19 +167,29 @@ export default function ShowcaseRoom() {
   };
 
   const handleUpdate = async (kode, data) => {
-    try { await axios.put(`${BASE}/devices/${kode}`, data); toast.success("Updated"); fetchDevices(); }
-    catch { toast.error("Failed"); }
+    const dev = devices.find(d => d.kode === kode);
+    if (!dev?.id) return;
+    try {
+      await axios.put(`${API}/devices/${dev.id}`, {
+        name: data.nama,
+        conn_info: { ip: data.ip },
+      });
+      toast.success("Updated");
+      fetchDevices();
+    } catch { toast.error("Failed to update"); }
   };
 
   const handleDelete = async (kode) => {
+    const dev = devices.find(d => d.kode === kode);
+    if (!dev?.id) return;
     try {
-      await axios.delete(`${BASE}/devices/${kode}`);
+      await axios.delete(`${API}/devices/${dev.id}`);
       toast.success("Deleted");
       setSelectedIds(p => p.filter(id => id !== kode));
       setDeviceStatuses(p => { const n = { ...p }; delete n[kode]; return n; });
       const newLayout = Object.fromEntries(Object.entries(gridLayout).filter(([, v]) => v !== kode));
       setGridLayout(newLayout);
-      await axios.put(`${BASE}/grid-layout`, { ...gridConfig, cells: newLayout });
+      await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...gridConfig, cells: newLayout });
       fetchDevices();
     } catch { toast.error("Failed"); }
   };
@@ -156,7 +202,7 @@ export default function ShowcaseRoom() {
   /* ── Grid Layout ──────────────────────────────────────────────────────── */
   const handleLayoutChange = async (newLayout) => {
     setGridLayout(newLayout);
-    try { await axios.put(`${BASE}/grid-layout`, { ...gridConfig, cells: newLayout }); } catch {}
+    try { await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...gridConfig, cells: newLayout }); } catch {}
   };
 
   const handleGridConfigConfirm = async ({ cols, rows }) => {
@@ -192,35 +238,48 @@ export default function ShowcaseRoom() {
       }
     }
     setGridConfig(newConfig); setGridLayout(newLayout);
-    try { await axios.put(`${BASE}/grid-layout`, { ...newConfig, cells: newLayout }); } catch {}
+    try { await axios.put(`${API}/room/config?room_id=${ROOM_ID}`, { ...newConfig, cells: newLayout }); } catch {}
   };
 
   /* ── Saved Selections ─────────────────────────────────────────────────── */
-  const handleSaveSel = async (name, ids) => {
+  const handleSaveSel = async (name, kodes) => {
     try {
-      await axios.post(`${BASE}/saved-selections`, { name, kodes: ids });
+      await axios.post(`${API}/selections`, { room_id: ROOM_ID, name, device_ids: kodes });
       toast.success(`"${name}" saved`);
       fetchSavedSel();
     } catch { toast.error("Failed to save selection"); }
   };
-  const handleDeleteSel = async (id) => { try { await axios.delete(`${BASE}/saved-selections/${id}`); fetchSavedSel(); } catch {} };
+  const handleDeleteSel = async (id) => { try { await axios.delete(`${API}/selections/${id}`); fetchSavedSel(); } catch {} };
   const handleApplySel  = sel => {
-    const valid = (sel.kodes || []).filter(k => devices.some(d => d.kode === k));
+    const selIds = sel.device_ids || [];
+    const valid = devices.filter(d => selIds.some(k => String(d.kode) === String(k))).map(d => d.kode);
     if (sel._action === "deselect") {
       setSelectedIds(prev => prev.filter(id => !valid.includes(id)));
       toast.success(`"${sel.name}" deselected — ${valid.length} device(s) removed`);
     } else {
-      // Add kodes from this selection to current selection (preventing duplicates)
       setSelectedIds(prev => Array.from(new Set([...prev, ...valid])));
       toast.success(`"${sel.name}" added — ${valid.length} device(s) added to selection`);
     }
   };
 
+
   /* ── Light Control ────────────────────────────────────────────────────── */
+  // Helper: simpan status ke DB — dipanggil setelah setiap setDeviceStatuses
+  const persistStatuses = (ns) => {
+    const devMap = Object.fromEntries(devices.map(d => [d.kode, d.id]));
+    Promise.allSettled(
+      Object.entries(ns).map(([kode, st]) => {
+        const devId = devMap[Number(kode)];
+        return devId ? axios.patch(`${API}/devices/${devId}/status`, { status: st }) : Promise.resolve();
+      })
+    );
+  };
+
   const updateStatuses = (report, action) => {
     const ns = {};
     report.forEach(d => { ns[d.kode] = d.status === "success" ? action : "failed"; });
     setDeviceStatuses(p => ({ ...p, ...ns }));
+    persistStatuses(ns);
     const fc = report.filter(d => d.status !== "success").length;
     const sc = report.filter(d => d.status === "success").length;
     if (fc > 0 && sc > 0) toast.warning(`${sc} ok, ${fc} failed`);
@@ -228,30 +287,25 @@ export default function ShowcaseRoom() {
     else toast.success("All lights successful");
   };
 
+
   const handleControlSelected = async (action) => {
     if (!selectedIds.length) return;
     setLoading(true);
     try {
       const targetDevices = devices.filter(d => selectedIds.includes(d.kode));
-      let results;
-      if (action === "on") {
-        results = await Promise.allSettled(
-          targetDevices.map(d => axios.post(`${BASE}/lampu`, {
-            KodeLampu: d.kode,
-            Warna: { Red: 255, Green: 255, Blue: 255 },
-            Kecerahan: brightness
-          }))
-        );
-      } else {
-        results = await Promise.allSettled(
-          targetDevices.map(d => axios.post(`${BASE}/turn-off`, { KodeLampu: d.kode }))
-        );
-      }
+      const ips = targetDevices.map(d => d.ip).filter(Boolean);
+      const r = await axios.post(`${CTRL}/lampu`, {
+        ips, action,
+        brightness,
+        rgb: action === "on" ? [255, 255, 255] : undefined,
+      });
       const ns = {};
-      results.forEach((r, i) => {
-        ns[targetDevices[i].kode] = r.status === "fulfilled" && r.value.data.status === "success" ? action : "failed";
+      (r.data.devices || []).forEach(res => {
+        const dev = targetDevices.find(d => d.ip === res.ip);
+        if (dev) ns[dev.kode] = res.status === "success" ? action : "failed";
       });
       setDeviceStatuses(p => ({ ...p, ...ns }));
+      persistStatuses(ns);
       const fc = Object.values(ns).filter(s => s === "failed").length;
       if (fc > 0) toast.warning(`${selectedIds.length - fc} ok, ${fc} failed`);
       else toast.success(`${selectedIds.length} light(s) turned ${action}`);
@@ -262,14 +316,23 @@ export default function ShowcaseRoom() {
   const handleControlSolid = async ({ rgb, brightness: br, sceneId }) => {
     if (selectedIds.length === 0) return;
     setLoading(true);
-    const payload = sceneId
-      ? { SceneId: sceneId, Kecerahan: br || brightness }
-      : { Warna: { Red: rgb.r, Green: rgb.g, Blue: rgb.b }, Kecerahan: br || brightness };
+    const targetDevices = devices.filter(d => selectedIds.includes(d.kode));
+    const ips = targetDevices.map(d => d.ip).filter(Boolean);
     try {
-      const results = await Promise.allSettled(selectedIds.map(k => axios.post(`${BASE}/lampu`, { ...payload, KodeLampu: k })));
+      const r = await axios.post(`${CTRL}/lampu`, {
+        ips,
+        action: "on",
+        brightness: br || brightness,
+        rgb: rgb ? [rgb.r, rgb.g, rgb.b] : undefined,
+        scene_id: sceneId || undefined,
+      });
       const ns = {};
-      results.forEach((r, i) => { ns[selectedIds[i]] = r.status === "fulfilled" && r.value.data.status === "success" ? "on" : "failed"; });
+      (r.data.devices || []).forEach(res => {
+        const dev = targetDevices.find(d => d.ip === res.ip);
+        if (dev) ns[dev.kode] = res.status === "success" ? "on" : "failed";
+      });
       setDeviceStatuses(p => ({ ...p, ...ns }));
+      persistStatuses(ns);
       toast.success("Applied to selection");
     } catch { toast.error("Failed"); }
     setLoading(false);
@@ -277,18 +340,31 @@ export default function ShowcaseRoom() {
 
   const handleActivateAll = async () => {
     if (!devices.length) return; setLoading(true);
-    try { const r = await axios.post(`${BASE}/lampu`, { Warna: { Red: 255, Green: 255, Blue: 255 }, Kecerahan: brightness }); if (r.data.devices) updateStatuses(r.data.devices, "on"); } catch { toast.error("Failed"); }
+    try {
+      const r = await axios.post(`${CTRL}/lampu`, { action: "on", ips: devices.map(d => d.ip).filter(Boolean), rgb: [255,255,255], brightness });
+      const ns = {};
+      (r.data.devices || []).forEach(res => {
+        const dev = devices.find(d => d.ip === res.ip);
+        if (dev) ns[dev.kode] = res.status === "success" ? "on" : "failed";
+      });
+      setDeviceStatuses(p => ({ ...p, ...ns }));
+      persistStatuses(ns);
+    } catch { toast.error("Failed"); }
     setLoading(false);
   };
   const handleDeactivateAll = async () => {
     if (!devices.length) return; setLoading(true);
     try {
-      const r = await axios.post(`${BASE}/turn-off`);
-      if (r.data.devices) updateStatuses(r.data.devices, "off");
-      else { const ao = {}; devices.forEach(d => { ao[d.kode] = "off"; }); setDeviceStatuses(p => ({ ...p, ...ao })); toast.success("All off"); }
+      await axios.post(`${CTRL}/turn-off`, { action: "off", ips: devices.map(d => d.ip).filter(Boolean) });
+      const ns = {};
+      devices.forEach(d => { ns[d.kode] = "off"; });
+      setDeviceStatuses(p => ({ ...p, ...ns }));
+      persistStatuses(ns);
+      toast.success("All off");
     } catch { toast.error("Failed"); }
     setLoading(false);
   };
+
 
   const onCount     = Object.values(deviceStatuses).filter(s => s === "on").length;
   const failedCount = Object.values(deviceStatuses).filter(s => s === "failed").length;
@@ -385,15 +461,64 @@ export default function ShowcaseRoom() {
             />
           </div>
 
-          {/* Right: Control + Status + Saved Selections — sticky */}
+          {/* Right: Tab-based Control Panel — sticky */}
           <div className="w-full lg:w-80 space-y-4 lg:sticky lg:top-20 lg:self-start">
-            <SelectedControlPanel
-              count={selectedIds.length}
-              onAction={handleControlSelected}
-              loading={loading}
-            />
-            <ChromaControl onApply={handleControlSolid} selectedCount={selectedIds.length}
-              brightness={brightness} onBrightnessChange={setBrightness} />
+            {/* Unified Control Panel */}
+            <div className="flex flex-col bg-white border border-[#E5E7EB] rounded-lg overflow-hidden">
+              {/* Header — selection count + power buttons */}
+              <div className="px-4 py-3 border-b border-[#E5E7EB] bg-[#FAFAFA]">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-[#637083] font-medium">Selected</p>
+                    <p className="text-2xl font-bold text-[#1C2025]" style={{ fontFamily: "Work Sans, sans-serif" }}>
+                      {selectedIds.length}
+                      <span className="text-sm font-normal text-[#9CA3AF] ml-1">light{selectedIds.length !== 1 ? "s" : ""}</span>
+                    </p>
+                  </div>
+                  {selectedIds.length === 0 && (
+                    <span className="text-[10px] text-[#F59E0B] bg-yellow-50 border border-yellow-200 px-2 py-1 rounded-full">
+                      Select lights first
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleControlSelected("on")} disabled={!selectedIds.length || loading}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-md bg-[#DA2C38] text-white hover:bg-[#B9252F] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    <Power className="w-4 h-4" /> ON
+                  </button>
+                  <button onClick={() => handleControlSelected("off")} disabled={!selectedIds.length || loading}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-md border border-[#E5E7EB] text-[#637083] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    <PowerOff className="w-4 h-4" /> OFF
+                  </button>
+                </div>
+              </div>
+
+              {/* Tab selector */}
+              <div className="flex border-b border-[#E5E7EB]">
+                {["Color", "Scheduler"].map(t => (
+                  <button key={t} onClick={() => setControlTab(t)}
+                    className={`flex-1 py-2.5 text-xs font-medium tracking-wide transition-colors ${
+                      controlTab === t
+                        ? "text-[#DA2C38] border-b-2 border-[#DA2C38] bg-white"
+                        : "text-[#637083] hover:text-[#1C2025] hover:bg-gray-50"
+                    }`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab content */}
+              <div className={`flex-1 overflow-y-auto ${controlTab === "Scheduler" ? "p-0" : "p-4"}`}>
+                {controlTab === "Color" && (
+                  <ChromaControl onApply={handleControlSolid} selectedCount={selectedIds.length}
+                    brightness={brightness} onBrightnessChange={setBrightness} embedded />
+                )}
+                {controlTab === "Scheduler" && (
+                  <SchedulerPanel roomId={ROOM_ID} selections={savedSelections} devices={devices} embedded />
+                )}
+              </div>
+            </div>
+
             <MasterStatus total={devices.length} onCount={onCount} failedCount={failedCount} />
             <SavedSelectionPanel selections={savedSelections} selectedIds={selectedIds}
               onSave={handleSaveSel} onApply={handleApplySel} onDelete={handleDeleteSel} />

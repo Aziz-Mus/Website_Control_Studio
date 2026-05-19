@@ -1,4 +1,4 @@
-import httpx
+﻿import httpx
 import logging
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class ACService:
                     try:
                         body = response.json()
                         if isinstance(body, dict):
-                            # Validasi body response — jangan percaya HTTP 200 saja
+                            # Validasi body response ΓÇö jangan percaya HTTP 200 saja
                             status_val = body.get("status", "").lower()
                             if status_val in ("failed", "error", "fail"):
                                 return {
@@ -63,7 +63,7 @@ class ACService:
                                 return {"status": "failed", "error": str(body.get("error"))}
                         return {"status": "success"}
                     except Exception:
-                        # Tidak bisa parse body, tapi HTTP 200 → anggap sukses
+                        # Tidak bisa parse body, tapi HTTP 200 ΓåÆ anggap sukses
                         return {"status": "success"}
 
                 return {"status": "failed", "error": f"HTTP {response.status_code}"}

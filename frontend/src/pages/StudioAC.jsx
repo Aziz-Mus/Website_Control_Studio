@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import axios from "axios";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const STATUS_KEY = "ac_device_statuses";
+const API     = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const CTRL_AC = `${API}/control/ac`;
+const ROOM_ID = "ac_room";
 const TEMP_KEY = "ac_device_temps";
 const TEMP_MIN = 16;
 const TEMP_MAX = 30;
@@ -42,32 +43,54 @@ export default function StudioAC() {
   const [deviceName, setDeviceName] = useState("");
   const [deviceIp, setDeviceIp] = useState("");
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState({});  // keyed by acCode for individual loads
+  const [loading, setLoading] = useState({});
   const [allLoading, setAllLoading] = useState(false);
 
-  // Persistent states
-  const [deviceStatuses, setDeviceStatuses] = useState(() => loadStorage(STATUS_KEY, {}));
+  // Persistent states — now DB-driven
+  const [deviceStatuses, setDeviceStatuses] = useState({});
   const [deviceTemps, setDeviceTemps] = useState(() => loadStorage(TEMP_KEY, {}));
   const [lastTemps, setLastTemps] = useState({});
   const [tempLoading, setTempLoading] = useState({});
   const [masterTemp, setMasterTemp] = useState(24);
   const [masterTempLoading, setMasterTempLoading] = useState(false);
 
-  useEffect(() => { localStorage.setItem(STATUS_KEY, JSON.stringify(deviceStatuses)); }, [deviceStatuses]);
   useEffect(() => { localStorage.setItem(TEMP_KEY, JSON.stringify(deviceTemps)); }, [deviceTemps]);
+
+  // Helper: persist statuses ke DB
+  const persistStatuses = (ns) => {
+    const devMap = Object.fromEntries(devices.map(d => [d.acCode, d.id]));
+    Promise.allSettled(
+      Object.entries(ns).map(([acCode, st]) => {
+        const devId = devMap[acCode];
+        return devId ? axios.patch(`${API}/devices/${devId}/status`, { status: st }) : Promise.resolve();
+      })
+    );
+  };
 
   const fetchDevices = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/studio/ac/devices`);
-      const devs = res.data.devices || [];
-      setDevices(devs);
-      // Init lastTemps from storage data
+      const r = await axios.get(`${API}/devices?room_id=${ROOM_ID}`);
+      const raw = Array.isArray(r.data) ? r.data : [];
+      const mapped = raw.map(d => ({
+        acCode:          d.conn_info?.ac_code ?? d.id,
+        deviceName:      d.name,
+        ip:              d.conn_info?.ip || "",
+        lastTemperature: d.last_state?.temperature ?? 24,
+        id:              d.id,
+      }));
+      setDevices(mapped);
+
+      // Init status dan temps dari DB (DB sebagai source of truth)
+      const dbStatuses = {};
       const lt = {};
       const savedTemps = loadStorage(TEMP_KEY, {});
-      devs.forEach(d => {
+      mapped.forEach(d => {
+        const rawDev = raw.find(r => r.id === d.id);
+        if (rawDev?.status) dbStatuses[d.acCode] = rawDev.status;
         lt[d.acCode] = d.lastTemperature || 24;
         if (savedTemps[d.acCode] === undefined) savedTemps[d.acCode] = d.lastTemperature || 24;
       });
+      setDeviceStatuses(prev => ({ ...dbStatuses, ...prev }));
       setLastTemps(lt);
       setDeviceTemps(prev => ({ ...savedTemps, ...prev }));
     } catch (e) { console.error(e); }
@@ -82,10 +105,20 @@ export default function StudioAC() {
     e.preventDefault(); if (!deviceName.trim() || !deviceIp.trim()) return; setSaving(true);
     try {
       if (editingDevice) {
-        await axios.put(`${API}/studio/ac/devices/${editingDevice.acCode}`, { deviceName: deviceName.trim(), ip: deviceIp.trim() });
-        toast.success("Device updated");
+        // Update name & IP via PUT /devices/{id}
+        await axios.put(`${API}/devices/${editingDevice.id}`, {
+          name: deviceName.trim(),
+          conn_info: { ip: deviceIp.trim() },
+        });
+        toast.success(`"${deviceName}" updated`);
       } else {
-        await axios.post(`${API}/studio/ac/devices`, { deviceName: deviceName.trim(), ip: deviceIp.trim() });
+        // Add new device
+        await axios.post(`${API}/devices`, {
+          room_id: ROOM_ID,
+          name: deviceName.trim(),
+          type: "ac",
+          conn_info: { ip: deviceIp.trim() }
+        });
         toast.success(`"${deviceName}" added`);
       }
       await fetchDevices(); setDialogOpen(false);
@@ -95,7 +128,10 @@ export default function StudioAC() {
 
   const handleDelete = async (acCode) => {
     try {
-      await axios.delete(`${API}/studio/ac/devices/${acCode}`);
+      const dev = devices.find(d => d.acCode === acCode);
+      const devId = dev ? dev.id : null;
+      if (!devId) return;
+      await axios.delete(`${API}/devices/${devId}`);
       toast.success("Device deleted");
       setDeviceStatuses(p => { const n = { ...p }; delete n[acCode]; return n; });
       setDeviceTemps(p => { const n = { ...p }; delete n[acCode]; return n; });
@@ -108,13 +144,21 @@ export default function StudioAC() {
   const controlDevice = async (dev, power) => {
     setLoading(p => ({ ...p, [dev.acCode]: true }));
     try {
-      const res = await axios.post(`${API}/studio/ac/control`, { acCode: dev.acCode, power });
+      const res = await axios.post(`${CTRL_AC}`, {
+        ip: dev.ip,
+        power,
+        temperature: dev.lastTemperature || 24
+      });
       const st = res.data.status === "success" ? power.toLowerCase() : "failed";
-      setDeviceStatuses(p => ({ ...p, [dev.acCode]: st }));
+      const ns = { [dev.acCode]: st };
+      setDeviceStatuses(p => ({ ...p, ...ns }));
+      persistStatuses(ns);
       if (st === "failed") toast.error(`"${dev.deviceName}" failed`);
       else toast.success(`"${dev.deviceName}" ${power === "ON" ? "turned on" : "turned off"}`);
     } catch (e) {
-      setDeviceStatuses(p => ({ ...p, [dev.acCode]: "failed" }));
+      const ns = { [dev.acCode]: "failed" };
+      setDeviceStatuses(p => ({ ...p, ...ns }));
+      persistStatuses(ns);
       toast.error("Control failed");
     }
     setLoading(p => ({ ...p, [dev.acCode]: false }));
@@ -124,28 +168,47 @@ export default function StudioAC() {
   const controlAll = async (power) => {
     if (!devices.length) return; setAllLoading(true);
     try {
-      const res = await axios.post(`${API}/studio/ac/control/all`, { power });
+      const res = await axios.post(`${CTRL_AC}/all`, {
+        room_id: ROOM_ID,
+        power,
+        temperature: masterTemp
+      });
       const ns = {};
-      (res.data.results || []).forEach(r => { ns[r.acCode] = r.status === "success" ? power.toLowerCase() : "failed"; });
+      (res.data.results || []).forEach(r => {
+        const dev = devices.find(d => d.id === r.id || d.deviceName === r.name);
+        if (dev) ns[dev.acCode] = r.status === "success" ? power.toLowerCase() : "failed";
+      });
       setDeviceStatuses(p => ({ ...p, ...ns }));
-      const fc = res.data.summary?.failed || 0;
-      const sc = res.data.summary?.success || 0;
-      if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} AC(s) failed`);
-      else if (fc > 0) toast.error(`${fc} AC(s) failed`);
-      else toast.success(`All ACs ${power === "ON" ? "turned on" : "turned off"}`);
-    } catch (e) { toast.error("Control failed"); }
+      persistStatuses(ns);
+      toast.success(`All AC turned ${power.toLowerCase()}`);
+    } catch (e) { toast.error("Bulk control failed"); }
     setAllLoading(false);
   };
 
   // Set temperature for single device
-  const handleApplyTemp = async (dev) => {
+  const handleApplyTemp = (dev) => {
     const temp = deviceTemps[dev.acCode] ?? lastTemps[dev.acCode] ?? 24;
+    setTemperature(dev, temp);
+  };
+
+  const setTemperature = async (dev, temp) => {
     const prevTemp = lastTemps[dev.acCode] ?? 24;
     setTempLoading(p => ({ ...p, [dev.acCode]: true }));
     try {
-      const res = await axios.post(`${API}/studio/ac/temperature`, { acCode: dev.acCode, temperature: temp });
+      const res = await axios.post(`${CTRL_AC}/temperature`, {
+        ip: dev.ip,
+        temperature: temp,
+        power: "ON"
+      });
       if (res.data.status === "success") {
         setLastTemps(p => ({ ...p, [dev.acCode]: temp }));
+        // Persist temperature to DB
+        if (dev.id) {
+          axios.patch(`${API}/devices/${dev.id}/status`, {
+            status: "on",
+            last_state: { temperature: temp }
+          }).catch(() => {});
+        }
         toast.success(`"${dev.deviceName}" set to ${temp}°C`);
       } else {
         setDeviceTemps(p => ({ ...p, [dev.acCode]: prevTemp }));
@@ -159,23 +222,26 @@ export default function StudioAC() {
   };
 
   // Set temperature for ALL devices
-  const handleApplyMasterTemp = async () => {
-    if (!devices.length) return; setMasterTempLoading(true);
+  const setTempAll = async () => {
+    if (!devices.length) return; setAllLoading(true);
     try {
-      const res = await axios.post(`${API}/studio/ac/temperature/all`, { temperature: masterTemp });
-      const newTemps = { ...lastTemps };
-      const newDevTemps = { ...deviceTemps };
-      (res.data.results || []).forEach(r => {
-        if (r.status === "success") { newTemps[r.acCode] = masterTemp; newDevTemps[r.acCode] = masterTemp; }
-      });
-      setLastTemps(newTemps); setDeviceTemps(newDevTemps);
-      const sc = res.data.summary?.success || 0;
-      const fc = res.data.summary?.failed || 0;
-      if (fc > 0 && sc > 0) toast.warning(`${sc} succeeded, ${fc} AC(s) failed`);
-      else if (fc > 0) toast.error(`Failed to set temperature for ${fc} AC(s)`);
-      else toast.success(`All ACs set to ${masterTemp}°C`);
+      await Promise.allSettled(
+        devices.map(d => axios.post(`${CTRL_AC}/temperature`, { ip: d.ip, temperature: masterTemp, power: "ON" }))
+      );
+      const nt = {};
+      devices.forEach(d => { nt[d.acCode] = masterTemp; });
+      setDeviceTemps(p => ({ ...p, ...nt }));
+      setLastTemps(p => ({ ...p, ...nt }));
+      // Persist all temps to DB
+      Promise.allSettled(
+        devices.map(d => d.id ? axios.patch(`${API}/devices/${d.id}/status`, {
+          status: "on",
+          last_state: { temperature: masterTemp }
+        }) : Promise.resolve())
+      );
+      toast.success(`All ACs set to ${masterTemp}°C`);
     } catch (e) { toast.error("Failed to reach server"); }
-    setMasterTempLoading(false);
+    setAllLoading(false);
   };
 
   const onCount = Object.values(deviceStatuses).filter(s => s === "on").length;
@@ -290,9 +356,9 @@ export default function StudioAC() {
               </div>
               <p className="text-[10px] text-[#637083]">Set temperature for all AC devices at once</p>
               <div className="space-y-2">
-                <TempStepper value={masterTemp} onChange={setMasterTemp} disabled={masterTempLoading || !devices.length} />
-                <Button className="w-full bg-[#3B82F6] hover:bg-[#2563EB] text-white rounded-md text-xs" onClick={handleApplyMasterTemp} disabled={masterTempLoading || !devices.length} data-testid="ac-apply-master-temp-btn">
-                  {masterTempLoading ? "Applying..." : `Apply ${masterTemp}°C to All`}
+                <TempStepper value={masterTemp} onChange={setMasterTemp} disabled={allLoading || !devices.length} />
+                <Button className="w-full bg-[#3B82F6] hover:bg-[#2563EB] text-white rounded-md text-xs" onClick={setTempAll} disabled={allLoading || !devices.length} data-testid="ac-apply-master-temp-btn">
+                  {allLoading ? "Applying..." : `Apply ${masterTemp}°C to All`}
                 </Button>
               </div>
             </div>
