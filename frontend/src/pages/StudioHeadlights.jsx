@@ -481,6 +481,7 @@ export default function StudioHeadlights() {
               roomId={ROOM_ID}
               selections={adaptedSels}
               devices={relays.map(r => ({ id: r.relayId, name: r.deviceName, kode: r.relayId }))}
+              hideColorBrightness={true}
             />
           </div>
         </div>

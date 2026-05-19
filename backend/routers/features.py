@@ -173,3 +173,9 @@ def get_schedule_logs(schedule_id: str, db: Session = Depends(get_db_ro)):
         }
         for log in logs
     ]
+
+
+@router.delete("/api/schedules/{schedule_id}/logs")
+def clear_schedule_logs(schedule_id: str, db: Session = Depends(get_db_rw)):
+    crud.clear_schedule_logs(db, schedule_id)
+    return {"status": "cleared"}

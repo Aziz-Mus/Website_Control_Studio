@@ -11,11 +11,13 @@ from datetime import datetime
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import Integer as SaInteger
 
 from db.connection import SessionRW
 from db import crud
-from db.models import SavedSelection
+from db.models import SavedSelection, Device
 from services.bulb_service import control_wiz_light, turn_off_wiz_light
+from services.relay_service import control_relay_channel
 
 logger = logging.getLogger(__name__)
 
@@ -174,47 +176,49 @@ async def _run_execution(schedule_id: str):
             await _broadcast_ws({"type": "schedule_status", "schedule_id": schedule_id, "status": "SKIPPED"})
             return
 
-        # 3. Resolve target IPs
-        ips = _resolve_targets(db, sch)
-        if not ips:
-            crud.add_schedule_log(db, schedule_id, "FAILED", "Tidak ada IP target ditemukan.")
+        # 3. Resolve targets (list of dicts with type/device info)
+        targets = _resolve_targets(db, sch)
+        if not targets:
+            crud.add_schedule_log(db, schedule_id, "FAILED", "Tidak ada target device ditemukan.")
             crud.update_schedule_run_status(db, schedule_id, "FAILED")
             await _broadcast_ws({"type": "schedule_status", "schedule_id": schedule_id, "status": "FAILED"})
             return
 
         # 4. Execute control with retry
         success_count = 0
-        failed_ips = []
+        failed_targets = []
+        succeeded_targets = []
 
         for attempt in range(1, 4):  # Max 3 retries
-            target_ips = failed_ips if failed_ips else ips
-            failed_ips = []
+            retry_targets = failed_targets if failed_targets else targets
+            failed_targets = []
 
-            tasks = [_control_device(ip, sch) for ip in target_ips]
+            tasks = [_control_device(t, sch) for t in retry_targets]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for ip, res in zip(target_ips, results):
+            for target, res in zip(retry_targets, results):
                 if isinstance(res, Exception) or (isinstance(res, dict) and res.get("status") == "failed"):
-                    failed_ips.append(ip)
+                    failed_targets.append(target)
                 else:
                     success_count += 1
+                    succeeded_targets.append(target)
 
-            if not failed_ips:
+            if not failed_targets:
                 break
             if attempt < 3:
                 await asyncio.sleep(2)  # Delay sebelum retry
 
         # 5. Determine final status
-        total = len(ips)
+        total = len(targets)
         if success_count >= total:
             final_status = sch.action.upper()
         elif success_count > 0:
-            final_status = sch.action.upper()  # Partial success still counts
+            final_status = "PARTIAL"
         else:
             final_status = "FAILED"
 
         # 6. Update device statuses in DB + collect updated devices for WS broadcast
-        updated_devices = _update_device_statuses(db, sch.room_id, ips, failed_ips, sch.action)
+        updated_devices = _update_device_statuses(db, sch.room_id, targets, failed_targets, sch.action)
 
         # 7. Push WebSocket device_status update (real-time UI card update)
         if updated_devices:
@@ -227,12 +231,18 @@ async def _run_execution(schedule_id: str):
         # 8. Update schedule status + log
         crud.update_schedule_run_status(db, schedule_id, final_status)
         detail = f"Executed {sch.action.upper()}: {success_count}/{total} succeeded"
-        if failed_ips:
-            detail += f" — Failed IPs: {', '.join(failed_ips)}"
+        if failed_targets:
+            failed_labels = []
+            for t in failed_targets:
+                if t["type"] == "relay":
+                    failed_labels.append(f"{t['ip']} ch{t['channel']}")
+                else:
+                    failed_labels.append(t['ip'])
+            detail += f" — Failed: {', '.join(failed_labels)}"
         crud.add_schedule_log(db, schedule_id, final_status, detail)
         crud.cleanup_schedule_logs(db, schedule_id, keep=10)
 
-        # 8. Push WebSocket final status
+        # 9. Push WebSocket final status
         await _broadcast_ws({
             "type": "schedule_status",
             "schedule_id": schedule_id,
@@ -251,85 +261,138 @@ async def _run_execution(schedule_id: str):
         db.close()
 
 
+def _build_target(dev) -> dict | None:
+    """Build target dict dari device object."""
+    if not dev or not dev.conn_info:
+        return None
+    ip = dev.conn_info.get("ip", "")
+    if not ip:
+        return None
+    # Deteksi tipe: relay punya "channel", wiz/smart bulb tidak
+    channel = dev.conn_info.get("channel")
+    if channel is not None:
+        return {
+            "type": "relay",
+            "ip": ip,
+            "channel": str(channel),
+            "device_id": dev.id,
+        }
+    else:
+        return {
+            "type": "wiz",
+            "ip": ip,
+            "device_id": dev.id,
+        }
+
+
 def _resolve_targets(db, sch) -> list:
-    """Dapatkan daftar IP berdasarkan target_type."""
+    """Dapatkan daftar target (dict dengan type/device info) berdasarkan target_type."""
     if sch.target_type == "device":
         dev = crud.get_device_by_id(db, sch.target_id)
-        ip = dev.conn_info.get("ip", "") if dev and dev.conn_info else ""
-        return [ip] if ip else []
+        t = _build_target(dev)
+        return [t] if t else []
 
     if sch.target_type == "selection":
         sel = db.query(SavedSelection).filter(SavedSelection.id == int(sch.target_id)).first()
         if not sel:
             return []
         device_ids = sel.device_ids or []
-        ips = []
+        targets = []
         for did in device_ids:
             dev = crud.get_device_by_id(db, str(did))
-            if dev and dev.conn_info:
-                ip = dev.conn_info.get("ip", "")
-                if ip:
-                    ips.append(ip)
-        return ips
+            if not dev:
+                # Fallback: cari berdasarkan conn_info.kode (integer atau string)
+                try:
+                    dev = db.query(Device).filter(
+                        Device.room_id == sch.room_id,
+                        (Device.conn_info["kode"].astext.cast(SaInteger) == int(did)) |
+                        (Device.conn_info["kode"].astext == str(did))
+                    ).first()
+                except (ValueError, TypeError):
+                    pass
+            t = _build_target(dev)
+            if t:
+                targets.append(t)
+        return targets
 
     # target_type == "all"
     devices = crud.get_devices_by_room(db, sch.room_id)
-    ips = []
+    targets = []
     for d in devices:
-        if d.conn_info and d.conn_info.get("ip"):
-            ips.append(d.conn_info["ip"])
-    return ips
+        t = _build_target(d)
+        if t:
+            targets.append(t)
+    return targets
 
 
-async def _control_device(ip: str, sch) -> dict:
-    """Kontrol satu perangkat berdasarkan action jadwal."""
+async def _control_device(target: dict, sch) -> dict:
+    """Kontrol satu perangkat berdasarkan action jadwal dan tipe device."""
     try:
-        if sch.action == "off":
-            return await turn_off_wiz_light(ip)
+        if target["type"] == "relay":
+            # Relay device — gunakan relay_service
+            state = "OFF" if sch.action == "off" else "ON"
+            return await control_relay_channel(target["ip"], target["channel"], state)
         else:
-            from services.models import ColorModel
-            color = None
-            if sch.rgb and len(sch.rgb) == 3:
-                color = ColorModel(Red=sch.rgb[0], Green=sch.rgb[1], Blue=sch.rgb[2])
-            brightness = sch.brightness if sch.brightness else 200
-            return await control_wiz_light(ip=ip, color=color, brightness=brightness)
+            # WiZ / smart bulb — gunakan bulb_service
+            ip = target["ip"]
+            if sch.action == "off":
+                return await turn_off_wiz_light(ip)
+            else:
+                from services.models import ColorModel
+                color = None
+                if sch.rgb and len(sch.rgb) == 3:
+                    color = ColorModel(Red=sch.rgb[0], Green=sch.rgb[1], Blue=sch.rgb[2])
+                brightness = sch.brightness if sch.brightness else 200
+                return await control_wiz_light(ip=ip, color=color, brightness=brightness)
     except Exception as e:
-        return {"status": "failed", "ip": ip, "error": str(e)}
+        return {"status": "failed", "error": str(e)}
 
 
-def _update_device_statuses(db, room_id: str, ips: list, failed_ips: list, action: str):
+def _target_key(target: dict) -> str:
+    """Unique key for a target — relay uses ip+channel, wiz uses ip only."""
+    if target["type"] == "relay":
+        return f"{target['ip']}:{target['channel']}"
+    return target["ip"]
+
+
+def _update_device_statuses(db, room_id: str, targets: list, failed_targets: list, action: str):
     """Update status perangkat di DB setelah eksekusi. Returns list of updated devices for WS broadcast.
     Menggunakan session DB terpisah agar tidak terpengaruh oleh error di session utama.
     """
-    status = "on" if action != "off" else "off"
+    ok_status = "on" if action != "off" else "off"
     updated = []
+
+    # Build lookup sets
+    failed_keys = set(_target_key(t) for t in failed_targets)
+    target_keys = set(_target_key(t) for t in targets)
+    # Map device_id → new_status
+    device_status_map = {}
+    for t in targets:
+        key = _target_key(t)
+        device_status_map[t["device_id"]] = "failed" if key in failed_keys else ok_status
 
     # Gunakan session terpisah untuk update device statuses
     dev_db = SessionRW()
     try:
         devices = crud.get_devices_by_room(dev_db, room_id)
-        logger.info(f"[_update_device_statuses] room={room_id}, found {len(devices)} devices, ips={ips}, failed={failed_ips}, action={action}")
+        logger.info(f"[_update_device_statuses] room={room_id}, found {len(devices)} devices, targets={len(targets)}, failed={len(failed_targets)}, action={action}")
 
         for d in devices:
-            if d.conn_info and d.conn_info.get("ip"):
-                ip = d.conn_info["ip"]
-                if ip in ips and ip not in failed_ips:
-                    new_status = status
-                elif ip in failed_ips:
-                    new_status = "failed"
-                else:
-                    continue  # device bukan target schedule ini
+            if d.id not in device_status_map:
+                continue  # device bukan target schedule ini
 
-                try:
-                    crud.update_device_status(dev_db, d.id, new_status)
-                    updated.append({
-                        "id": d.id,
-                        "kode": d.conn_info.get("kode") if d.conn_info else None,
-                        "status": new_status,
-                    })
-                    logger.info(f"  Device {d.id} ({d.name}) → status={new_status}")
-                except Exception as e:
-                    logger.error(f"  Failed to update device {d.id}: {e}")
+            new_status = device_status_map[d.id]
+
+            try:
+                crud.update_device_status(dev_db, d.id, new_status)
+                updated.append({
+                    "id": d.id,
+                    "kode": d.conn_info.get("kode") if d.conn_info else None,
+                    "status": new_status,
+                })
+                logger.info(f"  Device {d.id} ({d.name}) → status={new_status}")
+            except Exception as e:
+                logger.error(f"  Failed to update device {d.id}: {e}")
 
         logger.info(f"[_update_device_statuses] Updated {len(updated)} device(s)")
     except Exception as e:

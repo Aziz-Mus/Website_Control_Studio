@@ -28,7 +28,7 @@ function rgbToHex(r, g, b) {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
 }
 
-export default function ScheduleFormModal({ open, onOpenChange, roomId, selections, devices, editingSchedule, onDone }) {
+export default function ScheduleFormModal({ open, onOpenChange, roomId, selections, devices, editingSchedule, onDone, hideColorBrightness = false }) {
   const [name, setName] = useState("");
   const [hour, setHour] = useState("18");
   const [minute, setMinute] = useState("00");
@@ -111,14 +111,14 @@ export default function ScheduleFormModal({ open, onOpenChange, roomId, selectio
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md rounded-md">
+      <DialogContent className="sm:max-w-md !w-[calc(100%-2rem)] max-h-[90vh] flex flex-col rounded-lg p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle style={{ fontFamily: "Work Sans, sans-serif" }}>
             {editingSchedule ? "Edit Schedule" : "Add Schedule"}
           </DialogTitle>
           <DialogDescription>Configure automated on/off schedule.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 min-h-0 px-1 py-1">
           {/* Name */}
           <div className="space-y-1">
             <Label className="text-xs">Schedule Name</Label>
@@ -187,8 +187,8 @@ export default function ScheduleFormModal({ open, onOpenChange, roomId, selectio
             )}
           </div>
 
-          {/* Brightness + Color (only if action=on) */}
-          {action === "on" && (
+          {/* Brightness + Color (only if action=on AND NOT hidden for relay rooms) */}
+          {action === "on" && !hideColorBrightness && (
             <div className="space-y-3">
               {/* Brightness */}
               <div className="space-y-1">

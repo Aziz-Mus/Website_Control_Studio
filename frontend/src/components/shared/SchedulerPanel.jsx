@@ -14,10 +14,11 @@ const STATUS_GLOW = {
   EXECUTE: { bg: "bg-blue-500", ring: "ring-blue-400/50", text: "text-blue-600", pulse: true },
   ON:      { bg: "bg-[#10B981]", ring: "ring-emerald-400/50", text: "text-emerald-600", pulse: false },
   OFF:     { bg: "bg-gray-400", ring: "ring-gray-300/50", text: "text-gray-500", pulse: false },
+  PARTIAL: { bg: "bg-[#F59E0B]", ring: "ring-amber-400/50", text: "text-amber-600", pulse: false },
   FAILED:  { bg: "bg-[#EF4444]", ring: "ring-red-400/50", text: "text-red-600", pulse: false },
 };
 
-export default function SchedulerPanel({ roomId, selections = [], devices = [], embedded = false }) {
+export default function SchedulerPanel({ roomId, selections = [], devices = [], embedded = false, hideColorBrightness = false }) {
   const [schedules, setSchedules] = useState([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
@@ -103,10 +104,10 @@ export default function SchedulerPanel({ roomId, selections = [], devices = [], 
             <div key={sch.id}
               className={`relative p-3 rounded-lg border backdrop-blur-sm transition-all ${sch.is_active ? "bg-white/80 border-[#E5E7EB]" : "bg-gray-50/60 border-gray-200 opacity-60"}`}>
               {/* Top row: Name + Status indicator */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${st.bg} ${st.pulse ? "animate-pulse" : ""} ring-2 ${st.ring}`} />
-                  <span className="text-sm font-medium text-[#1C2025]">{sch.name}</span>
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${st.bg} ${st.pulse ? "animate-pulse" : ""} ring-2 ${st.ring}`} />
+                  <span className="text-sm font-medium text-[#1C2025] truncate">{sch.name}</span>
                 </div>
                 <span className={`text-[10px] font-bold uppercase ${st.text}`}>{sch.last_run_status || "IDLE"}</span>
               </div>
@@ -165,6 +166,7 @@ export default function SchedulerPanel({ roomId, selections = [], devices = [], 
         open={formOpen} onOpenChange={setFormOpen}
         roomId={roomId} selections={selections} devices={devices}
         editingSchedule={editingSchedule} onDone={fetchSchedules}
+        hideColorBrightness={hideColorBrightness}
       />
 
       {/* Log Modal */}

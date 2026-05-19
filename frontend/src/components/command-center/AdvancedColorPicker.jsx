@@ -80,8 +80,8 @@ export default function AdvancedColorPicker({ onColorChange, brightness = 200, o
     ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
   }, []);
 
-  useEffect(() => { drawCanvas(); }, [drawCanvas]);
-  useEffect(() => { drawHueBar(); }, [drawHueBar]);
+  useEffect(() => { if (tab === "Solid") drawCanvas(); }, [drawCanvas, tab]);
+  useEffect(() => { if (tab === "Solid") drawHueBar(); }, [drawHueBar, tab]);
 
   const getCoords = (e) => e.touches?.[0] ?? e;
 

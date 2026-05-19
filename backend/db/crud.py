@@ -1,9 +1,13 @@
 """
 FUnsgi CRUD
 """
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
+import pytz
 from db.models import Room, Device, Preset, Animation, SavedSelection, Schedule, ScheduleLog
+
+WIB = pytz.timezone("Asia/Jakarta")
 
 
 # ROOMS
@@ -197,7 +201,7 @@ def update_schedule_run_status(db: Session, schedule_id: str, status: str):
     sch = get_schedule_by_id(db, schedule_id)
     if sch:
         sch.last_run_status = status
-        sch.last_run_time = func.now()
+        sch.last_run_time = datetime.now(WIB)
         db.commit()
         db.refresh(sch)
     return sch
@@ -219,7 +223,7 @@ def get_schedule_logs(db: Session, schedule_id: str, limit: int = 10):
     ).order_by(ScheduleLog.id.desc()).limit(limit).all()
 
 def add_schedule_log(db: Session, schedule_id: str, status: str, details: str = None):
-    log = ScheduleLog(schedule_id=schedule_id, status=status, details=details)
+    log = ScheduleLog(schedule_id=schedule_id, status=status, details=details, executed_at=datetime.now(WIB))
     db.add(log)
     db.commit()
     db.refresh(log)
@@ -232,4 +236,9 @@ def cleanup_schedule_logs(db: Session, schedule_id: str, keep: int = 10):
     ).order_by(ScheduleLog.id.desc()).offset(keep).all()
     for log in logs:
         db.delete(log)
+    db.commit()
+
+def clear_schedule_logs(db: Session, schedule_id: str):
+    """Hapus semua log untuk schedule tertentu."""
+    db.query(ScheduleLog).filter(ScheduleLog.schedule_id == schedule_id).delete()
     db.commit()
