@@ -1,4 +1,4 @@
-# Dokumentasi Skema & Output API — Web Control Studio v3.0
+# Dokumentasi Skema & Output API — Web Control Studio
 
 ## 1. System Overview & Topology
 
@@ -29,6 +29,11 @@ Web Control Studio adalah sistem kendali perangkat IoT berbasis web yang terdiri
 | `showcase_room` | Showcase Room | WiZ Lamps |
 | `studio_neon_room` | Studio: Neon Control | WiZ Lamps |
 | `cc_room` | Command Center | WiZ Lamps |
+
+
+**Ruangan yang belum aktif secara hardware:**
+| Room ID | Nama Menu | Tipe Hardware |
+|---|---|---|
 | `headlights_room` | Studio: Main Headlights | Relay ESP32 |
 | `ac_room` | Studio: AC Control | AC Service |
 
@@ -619,22 +624,65 @@ Backend berkomunikasi dengan lampu WiZ menggunakan library `pywizlight` melalui 
 
 ---
 
-### 4.3 WebSocket — Real-time Scheduler Status
+### 4.3 WebSocket — Real-time Status Updates
 
-Selain REST API, backend menyediakan koneksi WebSocket untuk pembaruan status scheduler secara real-time ke browser tanpa perlu polling.
+Selain REST API, backend menyediakan koneksi WebSocket untuk pembaruan status secara real-time ke browser tanpa perlu polling.
 
 **WebSocket URL:** `ws://localhost:8000/ws/schedules`
 
-**Event yang dikirim backend ke browser:**
+#### Event 1: `schedule_status` — Pembaruan status jadwal
 
 Saat jadwal mulai dieksekusi:
 ```json
 { "type": "schedule_status", "schedule_id": "sch_a1b2c3d4", "status": "EXECUTE" }
 ```
 
-Saat eksekusi selesai:
+Saat eksekusi selesai (berhasil semua):
 ```json
-{ "type": "schedule_status", "schedule_id": "sch_a1b2c3d4", "status": "OFF", "details": "10/10 lampu berhasil dimatikan." }
+{ "type": "schedule_status", "schedule_id": "sch_a1b2c3d4", "status": "ON" }
 ```
 
-Status yang mungkin dikirim via WebSocket: `EXECUTE`, `ON`, `OFF`, `PARTIAL`, `FAILED`, `SKIPPED`
+Saat eksekusi selesai (sebagian berhasil, sebagian gagal):
+```json
+{ "type": "schedule_status", "schedule_id": "sch_a1b2c3d4", "status": "PARTIAL" }
+```
+
+Saat eksekusi gagal semua:
+```json
+{ "type": "schedule_status", "schedule_id": "sch_a1b2c3d4", "status": "FAILED" }
+```
+
+Status yang mungkin dikirim: `EXECUTE`, `ON`, `OFF`, `PARTIAL`, `FAILED`, `SKIPPED`
+
+| Status | Warna Badge | Keterangan |
+|---|---|---|
+| `EXECUTE` | 🔵 Biru | Sedang mengeksekusi |
+| `ON` | 🟢 Hijau | Semua device berhasil dinyalakan |
+| `OFF` | ⚪ Abu-abu | Semua device berhasil dimatikan |
+| `PARTIAL` | 🟡 Kuning | Sebagian berhasil, sebagian gagal |
+| `FAILED` | 🔴 Merah | Semua device gagal |
+
+#### Event 2: `device_status` — Pembaruan status perangkat individual
+
+Dikirim setelah eksekusi selesai, untuk mengupdate status tiap perangkat di UI secara real-time:
+```json
+{
+  "type": "device_status",
+  "room_id": "headlights_room",
+  "devices": [
+    { "id": "hl_rl01", "kode": "1", "status": "on" },
+    { "id": "hl_rl02", "kode": "2", "status": "failed" },
+    { "id": "hl_rl03", "kode": "3", "status": "on" }
+  ]
+}
+```
+
+Per-device status yang mungkin dikirim:
+
+| Status | Keterangan |
+|---|---|
+| `"on"` | Device berhasil dinyalakan |
+| `"off"` | Device berhasil dimatikan |
+| `"failed"` | Device gagal dikendalikan |
+
+> **Catatan:** Pada status `PARTIAL`, setiap device tetap menerima status individual — yang berhasil mendapat `"on"`/`"off"`, yang gagal mendapat `"failed"`. Status `PARTIAL` hanya berlaku di level schedule, bukan di level device.
