@@ -83,7 +83,6 @@ class Schedule(Base):
     target_type = Column(String(15), default="all")    # "all" | "selection" | "device"
     target_id = Column(String(100), nullable=True)     # ID selection atau device
     is_active = Column(Integer, default=1)             # SQLite compat (1=true, 0=false)
-    is_snoozed = Column(Integer, default=0)
     last_run_status = Column(String(15), nullable=True)  # EXECUTE, ON, OFF, FAILED, NULL
     last_run_time = Column(TIMESTAMP, nullable=True)
 

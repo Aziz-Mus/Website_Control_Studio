@@ -168,15 +168,7 @@ async def _run_execution(schedule_id: str):
         crud.update_schedule_run_status(db, schedule_id, "EXECUTE")
         await _broadcast_ws({"type": "schedule_status", "schedule_id": schedule_id, "status": "EXECUTE"})
 
-        # 2. Cek snooze
-        if sch.is_snoozed:
-            crud.snooze_schedule(db, schedule_id)  # Reset snooze ke false
-            crud.add_schedule_log(db, schedule_id, "SKIPPED", "Eksekusi diabaikan karena status Snooze aktif.")
-            crud.update_schedule_run_status(db, schedule_id, "OFF")
-            await _broadcast_ws({"type": "schedule_status", "schedule_id": schedule_id, "status": "SKIPPED"})
-            return
-
-        # 3. Resolve targets (list of dicts with type/device info)
+        # 2. Resolve targets (list of dicts with type/device info)
         targets = _resolve_targets(db, sch)
         if not targets:
             crud.add_schedule_log(db, schedule_id, "FAILED", "Tidak ada target device ditemukan.")

@@ -109,7 +109,7 @@ def get_schedules(room_id: str, db: Session = Depends(get_db_ro)):
             "time": s.time, "days": s.days, "action": s.action,
             "brightness": s.brightness, "rgb": s.rgb,
             "target_type": s.target_type, "target_id": s.target_id,
-            "is_active": bool(s.is_active), "is_snoozed": bool(s.is_snoozed),
+            "is_active": bool(s.is_active),
             "last_run_status": s.last_run_status,
             "last_run_time": str(s.last_run_time) if s.last_run_time else None,
         }

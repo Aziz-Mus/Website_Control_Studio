@@ -189,13 +189,6 @@ def toggle_schedule(db: Session, schedule_id: str):
         db.refresh(sch)
     return sch
 
-def snooze_schedule(db: Session, schedule_id: str):
-    sch = get_schedule_by_id(db, schedule_id)
-    if sch:
-        sch.is_snoozed = 0 if sch.is_snoozed else 1
-        db.commit()
-        db.refresh(sch)
-    return sch
 
 def update_schedule_run_status(db: Session, schedule_id: str, status: str):
     sch = get_schedule_by_id(db, schedule_id)
