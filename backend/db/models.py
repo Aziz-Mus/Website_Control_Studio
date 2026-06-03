@@ -97,3 +97,15 @@ class ScheduleLog(Base):
     executed_at = Column(TIMESTAMP, server_default=func.now())
     status = Column(String(15), nullable=False)        # ON, OFF, FAILED, SKIPPED
     details = Column(Text, nullable=True)
+
+class User(Base):
+    """
+    Tabel: users
+    Menyimpan data otentik dan hak akses
+    """
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False)
+    is_active = Column(Integer, default=1)

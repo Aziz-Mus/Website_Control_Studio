@@ -6,10 +6,13 @@ Jalankan dengan reload : uvicorn server:app --reload --port 8000
 import logging
 import os
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import jwt
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from sqlalchemy import text as sa_text
 from dotenv import load_dotenv
+from routers.auth import router as auth_router
 
 load_dotenv()
 
@@ -42,6 +45,25 @@ from routers.control import router as control_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Skema bearer dari FastAPI
+security = HTTPBearer()
+
+# Skema JWT User
+SECRET_KEY_USER = os.getenv("SECRET_KEY_USER")
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        # Mencoba membuka token menggunakan SECRET_KEY_USER
+        payload = jwt.decode(token, SECRET_KEY_USER, algorithms=["HS256"])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token sudah kedaluwarsa")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token palsu atau salah")
+
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Web Control Studio API",
@@ -68,10 +90,11 @@ app.add_middleware(
 )
 
 # ── Register Routers ──────────────────────────────────────────────────────────
-app.include_router(rooms_router)
-app.include_router(devices_router)
-app.include_router(features_router)
-app.include_router(control_router)   # Hardware control (WiZ, Relay, AC)
+app.include_router(auth_router)
+app.include_router(rooms_router, dependencies=[Depends(verify_token)])
+app.include_router(devices_router, dependencies=[Depends(verify_token)])
+app.include_router(features_router, dependencies=[Depends(verify_token)])
+app.include_router(control_router, dependencies=[Depends(verify_token)])   # Hardware control (WiZ, Relay, AC)
 
 # ── Root Endpoint ─────────────────────────────────────────────────────────────
 @app.get("/")

@@ -4,6 +4,17 @@ import { Menu, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import axios from "axios";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -16,6 +27,20 @@ export default function Navbar() {
   const isStudio = location.pathname.startsWith("/studio");
   const isShowcase = location.pathname.startsWith("/showcase");
   const isCC = location.pathname.startsWith("/command-center");
+
+  const role = localStorage.getItem("user_role");
+
+  const studioRoles = ['admin', 'studio_all', 'studio_neon_control', 'studio_main_headlight', 'studio_ac_control'];
+
+  const username = localStorage.getItem("username");
+
+  const getStudioTarget = () => {
+    if (role === 'studio_neon_control') return '/studio/neon';
+    if (role === 'studio_main_headlight') return '/studio/headlight';
+    if (role === 'studio_ac_control') return '/studio/ac';
+    const last = localStorage.getItem('lastStudioPage');
+    return (last && last !== '/studio') ? last : '/studio';
+  }
 
   // Close mobile menu on every route change
   useEffect(() => {
@@ -41,11 +66,16 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const handleStudioClick = () => {
-    const last = localStorage.getItem("lastStudioPage");
-    navigate(last && last !== "/studio" ? last : "/studio");
+    navigate(getStudioTarget());
   };
 
-
+  const handleLogout = () => {
+    localStorage.removeItem("api_token");
+    localStorage.removeItem("user_role");
+    localStorage.removeItem("username");
+    localStorage.removeItem("lastStudioPage");
+    navigate("/login");
+  }
 
   return (
     <div ref={menuRef} className="sticky top-0 z-50">
@@ -57,7 +87,7 @@ export default function Navbar() {
         {/* Left: Logo + STUDIO */}
         <div
           className="flex items-center flex-shrink-0 cursor-pointer select-none"
-          onClick={() => navigate("/studio")}
+          onClick={handleStudioClick}
           data-testid="nav-brand"
         >
           <div className="flex items-center gap-2 px-1 md:px-2.5 py-1.5">
@@ -78,9 +108,11 @@ export default function Navbar() {
             data-testid="nav-command-center"
             onClick={() => navigate("/command-center")}
             className={`text-sm font-medium tracking-wide transition-colors pb-0.5 ${
-              isCC
-                ? "text-[#DA2C38] border-b-2 border-[#DA2C38]"
-                : "text-[#637083] hover:text-[#1C2025]"
+              !['admin', 'command_center'].includes(role)
+                ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
+                : isCC
+                  ? "text-[#DA2C38] border-b-2 border-[#DA2C38]"
+                  : "text-[#637083] hover:text-[#1C2025]"
             }`}
             style={{ fontFamily: "Work Sans, sans-serif" }}
           >
@@ -90,9 +122,11 @@ export default function Navbar() {
             data-testid="nav-studio"
             onClick={handleStudioClick}
             className={`text-sm font-medium tracking-wide transition-colors pb-0.5 ${
-              isStudio
-                ? "text-[#DA2C38] border-b-2 border-[#DA2C38]"
-                : "text-[#637083] hover:text-[#1C2025]"
+              !studioRoles.includes(role)
+                ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
+                : isStudio
+                  ? "text-[#DA2C38] border-b-2 border-[#DA2C38]"
+                  : "text-[#637083] hover:text-[#1C2025]"
             }`}
             style={{ fontFamily: "Work Sans, sans-serif" }}
           >
@@ -102,9 +136,11 @@ export default function Navbar() {
             data-testid="nav-showcase"
             onClick={() => navigate("/showcase")}
             className={`text-sm font-medium tracking-wide transition-colors pb-0.5 ${
-              isShowcase
-                ? "text-[#DA2C38] border-b-2 border-[#DA2C38]"
-                : "text-[#637083] hover:text-[#1C2025]"
+              !['admin', 'showcase_room'].includes(role)
+                ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
+                : isShowcase
+                  ? "text-[#DA2C38] border-b-2 border-[#DA2C38]"
+                  : "text-[#637083] hover:text-[#1C2025]"
             }`}
             style={{ fontFamily: "Work Sans, sans-serif" }}
           >
@@ -115,6 +151,44 @@ export default function Navbar() {
 
         {/* Right: Hamburger */}
         <div className="flex items-center ml-auto">
+          {/* Dekstop: Username + Sign Out */}
+          {username && (
+            <div className="hidden md:flex items-center gap-3 mr-3">
+              {/* Username */}
+              <span className="text-sm font-medium text-[#1C2025]" style={{fontFamily: "Work Sans, sans-serif"}}>
+                {username}
+              </span>
+
+              <div className="w-px h-4 bg-gray-300" />
+
+              {/* Sign Out button */}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button className="px-3 py-1.5 bg-[#DA2C38] hover:bg-[#b52330] text-white text-xs font-semibold rounded-md transition-colors" style={{fontFamily: "Work Sans, sans-serif"}}>
+                    Sign Out
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Logout Confirmation</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to log out? You will need to sign in again to access the system.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleLogout}
+                      className="bg-[#DA2C38] hover:bg-[#b52330] text-white"
+                    >
+                      Sign Out
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
+
           {/* Hamburger button — mobile only */}
           <button
             className="md:hidden ml-1 p-2 rounded-md text-[#637083] hover:text-[#1C2025] hover:bg-gray-100 transition-colors"
@@ -144,9 +218,11 @@ export default function Navbar() {
             data-testid="mobile-nav-studio"
             onClick={handleStudioClick}
             className={`flex items-center px-6 py-4 text-sm font-medium tracking-wide transition-colors text-left ${
-              isStudio
-                ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
-                : "text-[#637083] hover:text-[#1C2025] hover:bg-gray-50"
+              !studioRoles.includes(role)
+                ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
+                : isStudio
+                  ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
+                  : "text-[#637083] hover:bg-gray-50 hover:text-[#1C2025] border-l-2 border-transparent"
             }`}
             style={{ fontFamily: "Work Sans, sans-serif" }}
           >
@@ -156,9 +232,11 @@ export default function Navbar() {
             data-testid="mobile-nav-showcase"
             onClick={() => navigate("/showcase")}
             className={`flex items-center px-6 py-4 text-sm font-medium tracking-wide transition-colors text-left ${
-              isShowcase
-                ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
-                : "text-[#637083] hover:text-[#1C2025] hover:bg-gray-50"
+              !['admin', 'showcase_room'].includes(role)
+                ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
+                : isStudio
+                  ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
+                  : "text-[#637083] hover:bg-gray-50 hover:text-[#1C2025] border-l-2 border-transparent"
             }`}
             style={{ fontFamily: "Work Sans, sans-serif" }}
           >
@@ -168,14 +246,56 @@ export default function Navbar() {
             data-testid="mobile-nav-command-center"
             onClick={() => navigate("/command-center")}
             className={`flex items-center px-6 py-4 text-sm font-medium tracking-wide transition-colors text-left ${
-              isCC
-                ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
-                : "text-[#637083] hover:text-[#1C2025] hover:bg-gray-50"
+              !['admin', 'command_center'].includes(role)
+                ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
+                : isStudio
+                  ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
+                  : "text-[#637083] hover:bg-gray-50 hover:text-[#1C2025] border-l-2 border-transparent"
             }`}
             style={{ fontFamily: "Work Sans, sans-serif" }}
           >
             Command Center
           </button>
+
+          {/* Mobile username + sign out */}
+          {username && <div className="border-t border-[#E5E7EB] mx-4 my-1"/>}
+
+          {username && (
+            <div className="flex items-center justify-end px-6 py-3">
+              {/* Username */}
+              <span className="text-sm font-medium text-[#1C2025]" style={{fontFamily: "Work Sans, sans-serif"}}>
+                {username}
+              </span>
+
+              <div className="w-px h-4 bg-gray-300 mx-3" />
+
+              {/* Button Sign Out */}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button className="px-3 py-1.5 bg-[#DA2C38] hover:bg-[#b52330] text-white text-xs font-semibold rounded-md transition-colors" style={{fontFamily: "Work Sans, sans-serif"}}>
+                    Sign Out
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Logout Confirmation</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to log out? You will need to sign in again to access the system.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter >
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleLogout}
+                      className="bg-[#DA2C38] hover:bg-[#b52330] text-white"
+                    >
+                      Sign Out
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
         </div>
       </div>
     </div>

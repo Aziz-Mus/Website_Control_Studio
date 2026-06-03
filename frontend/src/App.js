@@ -10,12 +10,47 @@ import StudioAC from "@/pages/StudioAC";
 import StudioACRoom from "@/pages/StudioACRoom";
 import StudioHeadlights from "@/pages/StudioHeadlights";
 import CommandCenter from "@/pages/CommandCenter";
+import Login from "@/pages/Login";
+import axios from "axios";
+import { Children } from "react";
+
+// AXIOS GLOBAL INTERCEPTOR
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem("api_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+})
+
+// Melindungi Rute
+const ProtectedRoute = ({children, allowedRoles}) => {
+  const token = localStorage.getItem("api_token");
+  const userRole = localStorage.getItem("user_role");
+  
+  //  jika tidak punya token
+  if (!token) return <Navigate to="/login" replace />;
+
+  // Jika role tidak termasuk yang diizinkan
+  if (allowedRoles && userRole !== "admin" && !allowedRoles.includes(userRole)) {
+    return <Navigate to="/" replace />
+  }
+
+  return (
+    <>
+      <Navbar />
+      <main className="flex-1">{children}</main>
+      <Footer />
+    </>
+  );
+};
+
 
 function App() {
   return (
-    <div className="App min-h-screen flex flex-col">
+    <div className="App min-h-screen flex flex-col bg-zinc-950">
       <BrowserRouter>
-        <Navbar />
+        {/* <Navbar />
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<Navigate to="/showcase" replace />} />
@@ -28,9 +63,59 @@ function App() {
             <Route path="/command-center" element={<CommandCenter />} />
           </Routes>
         </main>
-        <Footer />
+        <Footer /> */}
+        <Routes>
+          {/* Rute bebas akses (Login) */}
+          <Route path="/login" element={<Login />} />
+
+          {/* Rute default pengalihan pintu mausk */}
+          <Route path="/" element={
+              localStorage.getItem("api_token")
+                ? <Navigate to="/showcase" replace/>
+                : <Navigate to="/login" replace/>
+            } 
+          />
+
+          {/* Rute yang dibatasi */}
+          <Route path="/showcase" element={
+              <ProtectedRoute allowedRoles={["showcase_room"]}>
+                <ShowcaseRoom />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/command-center" element={
+              <ProtectedRoute allowedRoles={["command_center"]}>
+                <CommandCenter />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/studio/neon" element={
+              <ProtectedRoute allowedRoles={["studio_all", "studio_neon_control"]}>
+                <StudioNeon />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/studio/ac" element={
+              <ProtectedRoute allowedRoles={["studio_all", "studio_ac_control"]}>
+                <StudioAC />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/studio/headlights" element={
+              <ProtectedRoute allowedRoles={["studio_all", "studio_main_headlight"]}>
+                <StudioHeadlights />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/studio" element={
+              <ProtectedRoute allowedRoles={["studio_all", "studio_neon_control", "studio_ac_control", "studio_main_headlight"]}>
+                <StudioHub />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
       </BrowserRouter>
-      <Toaster position="top-right" offset={70} richColors />
+      <Toaster position="top-right" offset={70} richColors theme="dark"/>
     </div>
   );
 }

@@ -194,7 +194,7 @@ def update_schedule_run_status(db: Session, schedule_id: str, status: str):
     sch = get_schedule_by_id(db, schedule_id)
     if sch:
         sch.last_run_status = status
-        sch.last_run_time = datetime.now(WIB)
+        sch.last_run_time = datetime.now(WIB).replace(tzinfo=None)
         db.commit()
         db.refresh(sch)
     return sch
@@ -216,7 +216,7 @@ def get_schedule_logs(db: Session, schedule_id: str, limit: int = 10):
     ).order_by(ScheduleLog.id.desc()).limit(limit).all()
 
 def add_schedule_log(db: Session, schedule_id: str, status: str, details: str = None):
-    log = ScheduleLog(schedule_id=schedule_id, status=status, details=details, executed_at=datetime.now(WIB))
+    log = ScheduleLog(schedule_id=schedule_id, status=status, details=details, executed_at=datetime.now(WIB).replace(tzinfo=None))
     db.add(log)
     db.commit()
     db.refresh(log)

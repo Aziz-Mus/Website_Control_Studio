@@ -295,7 +295,7 @@ export default function StudioAC() {
                       <div className="flex flex-col items-center gap-2">
                         <div className={`p-2 rounded-md ${bg}`}><Snowflake className={`w-5 h-5 ${ic}`} strokeWidth={1.5} /></div>
                         <div className="text-center w-full">
-                          <p className="text-[10px] uppercase tracking-wider text-[#637083]">#{dev.acCode}</p>
+                          {/* <p className="text-[10px] uppercase tracking-wider text-[#637083]">#{dev.acCode}</p> */}
                           <p className="text-xs font-medium text-[#1C2025] truncate" title={dev.deviceName}>{dev.deviceName}</p>
                           <p className="text-[10px] text-[#637083] truncate" title={dev.ip}>{dev.ip}</p>
                         </div>
