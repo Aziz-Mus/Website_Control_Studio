@@ -3,35 +3,64 @@ import { useEffect, useRef } from "react";
 const WS_URL = process.env.REACT_APP_BACKEND_URL?.replace("http", "ws");
 
 /**
- * Hook: Listen WebSocket untuk real-time device status updates dari scheduler.
- * @param {string} roomId - Room ID yang ingin didengarkan
- * @param {function} onDeviceStatus - Callback ketika menerima update, menerima object { room_id, devices: [{kode, status}] }
+ * Hook: Listen WebSocket untuk real-time device status updates dari seluruh sistem.
+ * 
+ * Menghandle 3 tipe pesan dari backend:
+ *   1. device_status  — dari scheduler/control.py setelah eksekusi sukses
+ *   2. DEVICE_UPDATE  — dari control relay bulk (legacy, trigger refresh)
+ *   3. schedule_status — dari scheduler engine
+ * 
+ * @param {function} onMessage - Callback dipanggil dengan data pesan WebSocket
  */
-export default function useDeviceStatusWS(roomId, onDeviceStatus) {
+export default function useDeviceStatusWS(onMessage) {
   const wsRef = useRef(null);
-  const callbackRef = useRef(onDeviceStatus);
-  callbackRef.current = onDeviceStatus;
+  const callbackRef = useRef(onMessage);
+  const reconnectTimerRef = useRef(null);
 
   useEffect(() => {
-    if (!roomId) return;
+    callbackRef.current = onMessage;
+  }, [onMessage]);
 
-    const ws = new WebSocket(`${WS_URL}/ws/schedules`);
-    wsRef.current = ws;
+  useEffect(() => {
+    let stopped = false;
 
-    ws.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type === "device_status" && data.room_id === roomId) {
-          callbackRef.current(data);
+    function connect() {
+      if (stopped) return;
+      const ws = new WebSocket(`${WS_URL}/ws/updates`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("[WS] Terhubung ke real-time Backend");
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          // Forward semua tipe pesan ke callback
+          if (callbackRef.current) callbackRef.current(data);
+        } catch (err) {
+          console.error("[WS] Gagal membaca pesan:", err);
         }
-      } catch { /* ignore malformed messages */ }
-    };
+      };
 
-    ws.onerror = () => { /* silent */ };
+      ws.onclose = () => {
+        console.log("[WS] Terputus — reconnect dalam 3s");
+        if (!stopped) {
+          reconnectTimerRef.current = setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        // onclose akan dipanggil setelah ini
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      stopped = true;
+      clearTimeout(reconnectTimerRef.current);
+      if (wsRef.current) wsRef.current.close();
     };
-  }, [roomId]);
+  }, []);
 }

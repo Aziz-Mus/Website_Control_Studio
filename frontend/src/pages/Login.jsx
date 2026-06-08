@@ -5,8 +5,6 @@ import {toast} from "sonner";
 import axios from "axios";
 import CryptoJS from "crypto-js";
 
-const API_URL = `${process.env.REACT_APP_BACKEND_URL}/api/auth/login`;
-
 export default function Login(){
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
@@ -41,8 +39,7 @@ export default function Login(){
             localStorage.setItem("api_token", res.data.access_token);
             localStorage.setItem("user_role", res.data.role);
             localStorage.setItem("username", res.data.username);
-
-            toast.success(`Selamat datang, ${res.data.username}`);
+            toast.success(`Welcome, ${res.data.username}`);
 
             // Otomatis arahkan ke halaman sesuai Role
             const role = res.data.role;
@@ -55,7 +52,7 @@ export default function Login(){
             else if (role === "studio_all") navigate("/studio");
             else navigate("/showcase");
         } catch (err) {
-            toast.error("Username atau password salah!");
+            toast.error("Wrong username or password!");
         } finally {
             setLoading(false);
         }

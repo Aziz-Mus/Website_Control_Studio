@@ -7,7 +7,6 @@ import ShowcaseRoom from "@/pages/ShowcaseRoom";
 import StudioHub from "@/pages/StudioHub";
 import StudioNeon from "@/pages/StudioNeon";
 import StudioAC from "@/pages/StudioAC";
-import StudioACRoom from "@/pages/StudioACRoom";
 import StudioHeadlights from "@/pages/StudioHeadlights";
 import CommandCenter from "@/pages/CommandCenter";
 import Login from "@/pages/Login";

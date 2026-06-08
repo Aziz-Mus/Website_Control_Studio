@@ -3,7 +3,6 @@ Scheduler Service — APScheduler-based automation engine.
 Menjalankan jadwal otomatis ON/OFF perangkat berdasarkan waktu.
 """
 import asyncio
-import json
 import logging
 import uuid
 from datetime import datetime
@@ -18,6 +17,7 @@ from db import crud
 from db.models import SavedSelection, Device
 from services.bulb_service import control_wiz_light, turn_off_wiz_light
 from services.relay_service import control_relay_channel
+from ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -28,31 +28,6 @@ DAY_MAP = {
     "monday": "mon", "tuesday": "tue", "wednesday": "wed",
     "thursday": "thu", "friday": "fri", "saturday": "sat", "sunday": "sun",
 }
-
-# ── WebSocket Manager (simple broadcast) ──────────────────────────────────────
-_ws_connections: list = []
-
-
-def register_ws(websocket):
-    _ws_connections.append(websocket)
-
-
-def unregister_ws(websocket):
-    if websocket in _ws_connections:
-        _ws_connections.remove(websocket)
-
-
-async def _broadcast_ws(data: dict):
-    """Push data ke semua connected WebSocket clients."""
-    msg = json.dumps(data)
-    dead = []
-    for ws in _ws_connections:
-        try:
-            await ws.send_text(msg)
-        except Exception:
-            dead.append(ws)
-    for ws in dead:
-        unregister_ws(ws)
 
 
 # ── Scheduler Engine ──────────────────────────────────────────────────────────
@@ -166,14 +141,14 @@ async def _run_execution(schedule_id: str):
 
         # 1. Set status EXECUTE
         crud.update_schedule_run_status(db, schedule_id, "EXECUTE")
-        await _broadcast_ws({"type": "schedule_status", "schedule_id": schedule_id, "status": "EXECUTE"})
+        await ws_manager.broadcast({"type": "schedule_status", "schedule_id": schedule_id, "status": "EXECUTE"})
 
         # 2. Resolve targets (list of dicts with type/device info)
         targets = _resolve_targets(db, sch)
         if not targets:
             crud.add_schedule_log(db, schedule_id, "FAILED", "Tidak ada target device ditemukan.")
             crud.update_schedule_run_status(db, schedule_id, "FAILED")
-            await _broadcast_ws({"type": "schedule_status", "schedule_id": schedule_id, "status": "FAILED"})
+            await ws_manager.broadcast({"type": "schedule_status", "schedule_id": schedule_id, "status": "FAILED"})
             return
 
         # 4. Execute control with retry
@@ -214,7 +189,7 @@ async def _run_execution(schedule_id: str):
 
         # 7. Push WebSocket device_status update (real-time UI card update)
         if updated_devices:
-            await _broadcast_ws({
+            await ws_manager.broadcast({
                 "type": "device_status",
                 "room_id": sch.room_id,
                 "devices": updated_devices,
@@ -235,7 +210,7 @@ async def _run_execution(schedule_id: str):
         crud.cleanup_schedule_logs(db, schedule_id, keep=10)
 
         # 9. Push WebSocket final status
-        await _broadcast_ws({
+        await ws_manager.broadcast({
             "type": "schedule_status",
             "schedule_id": schedule_id,
             "status": final_status,
@@ -246,7 +221,7 @@ async def _run_execution(schedule_id: str):
         try:
             crud.add_schedule_log(db, schedule_id, "FAILED", str(e))
             crud.update_schedule_run_status(db, schedule_id, "FAILED")
-            await _broadcast_ws({"type": "schedule_status", "schedule_id": schedule_id, "status": "FAILED"})
+            await ws_manager.broadcast({"type": "schedule_status", "schedule_id": schedule_id, "status": "FAILED"})
         except Exception:
             pass
     finally:

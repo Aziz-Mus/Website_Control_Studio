@@ -63,7 +63,7 @@ def add_device(data: DeviceCreate, db: Session = Depends(get_db_rw)):
     device_id = data.id or f"{data.room_id}_{str(uuid.uuid4())[:8]}"
 
     if crud.get_device_by_id(db, device_id):
-        raise HTTPException(status_code=409, detail=f"Device ID '{device_id}' sudah ada")
+        raise HTTPException(status_code=409, detail=f"Device ID '{device_id}' already exists")
 
     # 2. Auto-generate kode integer (max existing + 1) jika belum ada
     new_conn_info = dict(data.conn_info)

@@ -7,12 +7,13 @@ import logging
 import os
 import uvicorn
 import jwt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from sqlalchemy import text as sa_text
 from dotenv import load_dotenv
 from routers.auth import router as auth_router
+from ws_manager import ws_manager
 
 load_dotenv()
 
@@ -51,18 +52,28 @@ security = HTTPBearer()
 # Skema JWT User
 SECRET_KEY_USER = os.getenv("SECRET_KEY_USER")
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def verify_token(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     try:
         # Mencoba membuka token menggunakan SECRET_KEY_USER
         payload = jwt.decode(token, SECRET_KEY_USER, algorithms=["HS256"])
+        role = payload.get("role")
+        method = request.method
+
+        # Aturan Read_Only
+        if role == "read_only" and method != "GET":
+            raise HTTPException(
+                status_code=403,
+                detail=f"Akses ditolak, Akun ini hanya diizinkan Read-Only (GET)"
+            )
+
         return payload
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token sudah kedaluwarsa")
+        raise HTTPException(status_code=401, detail="Token has expired")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token palsu atau salah")
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
 
-
+# ── WEBSOCKET MANAGER (Global Broadcast) ─────────────────────────────────────
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -110,20 +121,15 @@ def _start_scheduler():
     logger.info("Scheduler engine initialized")
 
 
-# ── WebSocket for Schedule Status ────────────────────────────────────────────
-@app.websocket("/ws/schedules")
+# ── WebSocket for System Updates ─────────────────────────────────────────────
+@app.websocket("/ws/updates")
 async def ws_schedules(websocket: WebSocket):
-    await websocket.accept()
-    from services.scheduler_service import register_ws, unregister_ws
-    register_ws(websocket)
+    await ws_manager.connect(websocket)
     try:
         while True:
-            # Keep connection alive — client can send pings
-            await websocket.receive_text()
+            data = await websocket.receive_text()
     except WebSocketDisconnect:
-        pass
-    finally:
-        unregister_ws(websocket)
+        ws_manager.disconnect(websocket)
 
 
 # ── Entry Point ───────────────────────────────────────────────────────────────

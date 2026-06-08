@@ -234,7 +234,7 @@ export default function Navbar() {
             className={`flex items-center px-6 py-4 text-sm font-medium tracking-wide transition-colors text-left ${
               !['admin', 'showcase_room'].includes(role)
                 ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
-                : isStudio
+                : isShowcase
                   ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
                   : "text-[#637083] hover:bg-gray-50 hover:text-[#1C2025] border-l-2 border-transparent"
             }`}
@@ -248,7 +248,7 @@ export default function Navbar() {
             className={`flex items-center px-6 py-4 text-sm font-medium tracking-wide transition-colors text-left ${
               !['admin', 'command_center'].includes(role)
                 ? "text-[#637083] opacity-40 pointer-events-none cursor-not-allowed"
-                : isStudio
+                : isCC
                   ? "text-[#DA2C38] bg-red-50 border-l-2 border-[#DA2C38]"
                   : "text-[#637083] hover:bg-gray-50 hover:text-[#1C2025] border-l-2 border-transparent"
             }`}

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import axios from "axios";
+import useDeviceStatusWS from "@/hooks/useDeviceStatusWS";
 
 const API     = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const CTRL_AC = `${API}/control/ac`;
@@ -90,13 +91,18 @@ export default function StudioAC() {
         lt[d.acCode] = d.lastTemperature || 24;
         if (savedTemps[d.acCode] === undefined) savedTemps[d.acCode] = d.lastTemperature || 24;
       });
-      setDeviceStatuses(prev => ({ ...dbStatuses, ...prev }));
+      setDeviceStatuses(prev => ({ ...prev, ...dbStatuses }));
       setLastTemps(lt);
-      setDeviceTemps(prev => ({ ...savedTemps, ...prev }));
+      setDeviceTemps(prev => ({ ...prev, ...savedTemps }));
     } catch (e) { console.error(e); }
   }, []);
 
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
+
+  // ── WebSocket: Real-time device status from backend ────────────────────
+  useDeviceStatusWS(() => {
+    fetchDevices();
+  });
 
   const openAdd = () => { setEditingDevice(null); setDeviceName(""); setDeviceIp(""); setDialogOpen(true); };
   const openEdit = (dev) => { setEditingDevice(dev); setDeviceName(dev.deviceName); setDeviceIp(dev.ip); setDialogOpen(true); };
@@ -299,6 +305,10 @@ export default function StudioAC() {
                           <p className="text-xs font-medium text-[#1C2025] truncate" title={dev.deviceName}>{dev.deviceName}</p>
                           <p className="text-[10px] text-[#637083] truncate" title={dev.ip}>{dev.ip}</p>
                         </div>
+                        <div className="flex items-center justify-center gap-1">
+                            <Thermometer className="w-2.5 h-2.5 text-[#637083]" strokeWidth={1.5} />
+                            <span className="text-[9px] text-[#637083]">Last Temp: {confirmedTemp}°C</span>
+                        </div>
                         <div className="flex items-center gap-1">
                           <div className={`w-1.5 h-1.5 rounded-full ${st === "on" ? "bg-[#10B981]" : st === "failed" ? "bg-[#F59E0B]" : "bg-[#D1D5DB]"}`} />
                           <span className={`text-[10px] font-medium ${st === "on" ? "text-[#10B981]" : st === "failed" ? "text-[#F59E0B]" : "text-[#637083]"}`}>
@@ -314,10 +324,6 @@ export default function StudioAC() {
                           <Button size="sm" className="w-full h-6 text-[10px] bg-[#3B82F6] hover:bg-[#2563EB] text-white rounded-md" onClick={() => handleApplyTemp(dev)} disabled={isTempLoading} data-testid={`ac-apply-temp-${dev.acCode}`}>
                             {isTempLoading ? "..." : "Apply"}
                           </Button>
-                          <div className="flex items-center justify-center gap-1">
-                            <Thermometer className="w-2.5 h-2.5 text-[#637083]" strokeWidth={1.5} />
-                            <span className="text-[9px] text-[#637083]">Last: {confirmedTemp}°C</span>
-                          </div>
                         </div>
                       </div>
                       <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

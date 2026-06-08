@@ -1,4 +1,4 @@
-﻿import httpx
+import httpx
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,9 +22,9 @@ class ACService:
                 response = await client.get(f"{self.base_url}/status", timeout=5.0)
                 if response.status_code == 200:
                     return response.json()
-                return {"error": "Gagal mengambil status AC", "code": response.status_code, "status": "failed"}
+                return {"error": "Failed to fetch AC status", "code": response.status_code, "status": "failed"}
         except Exception as e:
-            logger.warning(f"Gagal mengambil status AC {self.name} ({self.ip_address}): {e}")
+            logger.warning(f"Failed to fetch AC status {self.name} ({self.ip_address}): {e}")
             return {"error": str(e), "status": "failed"}
 
     async def control_ac(self, power: str, temperature: int) -> dict:
@@ -57,7 +57,7 @@ class ACService:
                             if status_val in ("failed", "error", "fail"):
                                 return {
                                     "status": "failed",
-                                    "error": body.get("message", "Device melaporkan kegagalan")
+                                    "error": body.get("message", "Device reported failure")
                                 }
                             if body.get("error"):
                                 return {"status": "failed", "error": str(body.get("error"))}

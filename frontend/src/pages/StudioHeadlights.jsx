@@ -53,12 +53,16 @@ export default function StudioHeadlights() {
   const [savedSels,         setSavedSels]        = useState([]);
   const [gridLoaded,        setGridLoaded]       = useState(false);
 
-  // ── WebSocket: Real-time device status from scheduler ────────────────────
-  useDeviceStatusWS(ROOM_ID, (data) => {
-    const ns = {};
-    (data.devices || []).forEach(d => { ns[d.id] = d.status; });
-    if (Object.keys(ns).length > 0) {
+  // ── WebSocket: Real-time device status from backend ────────────────────
+  useDeviceStatusWS((data) => {
+    if (data.type === "device_status" && data.room_id === ROOM_ID && data.devices) {
+      // Langsung update relayStatuses dari WS payload (real-time)
+      const ns = {};
+      data.devices.forEach(d => { ns[d.id] = d.status; });
       setRelayStatuses(prev => ({ ...prev, ...ns }));
+    } else if (data.type === "DEVICE_UPDATE") {
+      // Legacy bulk relay — refresh dari database
+      fetchConfig();
     }
   });
 

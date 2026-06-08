@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 from typing import Union
 from pydantic import BaseModel, Field
@@ -102,10 +102,10 @@ def parse_warna(warna) -> ColorModel:
     if isinstance(warna, str):
         data = json.loads(warna)
         return ColorModel(**data)
-    raise ValueError("Format Warna tidak valid")
+    raise ValueError("Invalid color format")
 
 
-# ΓöÇΓöÇΓöÇ Command Center Models ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+# Command Center Models 
 
 class CCControlRequest(BaseModel):
     """Control one or more Command Center ceiling lights."""

@@ -24,7 +24,7 @@ def get_room_detail(room_id: str, db: Session = Depends(get_db_ro)):
     """
     room = crud.get_room_by_id(db, room_id)
     if not room:
-        raise HTTPException(status_code=404, detail=f"Room '{room_id}' tidak ditemukan")
+        raise HTTPException(status_code=404, detail=f"Room '{room_id}' not found")
     return {
         "id": room.id,
         "name": room.name,
@@ -50,5 +50,5 @@ def update_room_config(room_id: str, body: RoomConfigUpdate, db: Session = Depen
     ui_config = body.model_dump(exclude_none=True)
     updated = crud.update_room_config(db, room_id, ui_config)
     if not updated:
-        raise HTTPException(status_code=404, detail=f"Room '{room_id}' tidak ditemukan")
+        raise HTTPException(status_code=404, detail=f"Room '{room_id}' not found")
     return {"status": "success", "room_id": room_id}

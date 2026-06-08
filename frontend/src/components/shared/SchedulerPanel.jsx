@@ -38,7 +38,7 @@ export default function SchedulerPanel({ roomId, selections = [], devices = [], 
 
   // WebSocket for real-time status updates
   useEffect(() => {
-    const ws = new WebSocket(`${WS_URL}/ws/schedules`);
+    const ws = new WebSocket(`${WS_URL}/ws/updates`);
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
