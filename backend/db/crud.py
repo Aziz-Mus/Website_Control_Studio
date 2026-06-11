@@ -40,7 +40,7 @@ def update_room_config(db: Session, room_id: str, ui_config: dict):
 # DEVICES
 def get_devices_by_room(db: Session, room_id: str):
     """Ambil semua perangkat dari satu menu"""
-    return db.query(Device).filter(Device.room_id == room_id).all()
+    return db.query(Device).filter(Device.room_id == room_id).order_by(Device.id).all()
 
 def get_device_by_id(db: Session, device_id: str):
     """Ambil satu perangkat berdasarkan ID"""

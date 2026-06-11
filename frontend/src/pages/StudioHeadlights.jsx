@@ -60,9 +60,6 @@ export default function StudioHeadlights() {
       const ns = {};
       data.devices.forEach(d => { ns[d.id] = d.status; });
       setRelayStatuses(prev => ({ ...prev, ...ns }));
-    } else if (data.type === "DEVICE_UPDATE") {
-      // Legacy bulk relay — refresh dari database
-      fetchConfig();
     }
   });
 

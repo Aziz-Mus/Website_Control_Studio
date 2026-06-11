@@ -56,9 +56,21 @@ export default function StudioNeon() {
   const [gridLoaded, setGridLoaded]       = useState(false);
   const [controlTab, setControlTab]       = useState("Color");
 
+  const devicesRef = useRef(devices);
+  useEffect(() => { devicesRef.current = devices; }, [devices]);
+
   // ── WebSocket: Real-time device status from backend ────────────────────
-  useDeviceStatusWS(() => {
-    fetchDevices();
+  useDeviceStatusWS((data) => {
+    if (data.type === "device_status" && data.room_id === ROOM_ID && data.devices) {
+      setDeviceStatuses(prev => {
+        const ns = { ...prev };
+        data.devices.forEach(d => {
+          const dev = devicesRef.current.find(x => x.id === d.id);
+          if (dev) ns[dev.kode] = d.status;
+        });
+        return ns;
+      });
+    }
   });
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY,    JSON.stringify(deviceStatuses)); }, [deviceStatuses]);

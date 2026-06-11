@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Snowflake, Trash2, Power, Sun, Thermometer, ChevronUp, ChevronDown, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -99,9 +99,21 @@ export default function StudioAC() {
 
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
+  const devicesRef = useRef(devices);
+  useEffect(() => { devicesRef.current = devices; }, [devices]);
+
   // ── WebSocket: Real-time device status from backend ────────────────────
-  useDeviceStatusWS(() => {
-    fetchDevices();
+  useDeviceStatusWS((data) => {
+    if (data.type === "device_status" && data.room_id === ROOM_ID && data.devices) {
+      setDeviceStatuses(prev => {
+        const ns = { ...prev };
+        data.devices.forEach(d => {
+          const dev = devicesRef.current.find(x => x.id === d.id);
+          if (dev) ns[dev.acCode] = d.status;
+        });
+        return ns;
+      });
+    }
   });
 
   const openAdd = () => { setEditingDevice(null); setDeviceName(""); setDeviceIp(""); setDialogOpen(true); };
