@@ -214,8 +214,14 @@ X-Signature: <hmac_sha256_signature>
 **Role yang tersedia:**
 | Role | Izin |
 |---|---|
-| `admin_all` | Full access (GET, POST, PUT, PATCH, DELETE) |
-| `read_only` | Hanya GET request |
+| `admin` | Full access Semua Menu |
+| `showcase_room` | Hanya Menu Showcase Room |
+| `command_center` | Hanya Menu Command Center |
+| `studio_all` | Hanya Menu Studio (Untuk Semua Control Yang ada Di Menu Studio) |
+| `studio_neon_control` | Hanya Menu Studio: Neon Light Control |
+| `studio_main_headlight` | Hanya Menu Studio: Headlight Control |
+| `studio_ac_control` | Hanya Menu Studio: AC Control |
+
 
 #### `POST /api/openapi/token`
 Generate long-lived API token (1 tahun) untuk integrasi pihak ketiga atau sistem AI. Menggunakan `form-data`, bukan JSON.
@@ -237,6 +243,12 @@ password=your_password
 }
 ```
 **Response `401`:** `{ "detail": "Wrong username or password!" }`
+
+**Role yang tersedia:**
+| Role | Izin |
+|---|---|
+| `admin` | Full access (GET, POST, PUT, PATCH, DELETE) |
+| `read_only` | Hanya GET request |
 
 ---
 

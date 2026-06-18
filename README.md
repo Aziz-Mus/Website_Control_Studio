@@ -317,7 +317,3 @@ Connect to `ws://your-server:8000/ws/updates` (or `ws://your-server/ws` via Ngin
 | `ac_room` | Studio: AC Control | AC Units | Hardware Pending |
 
 ---
-
-## License
-
-This project is proprietary and intended for internal studio use. Contact the repository owner for usage permissions.
