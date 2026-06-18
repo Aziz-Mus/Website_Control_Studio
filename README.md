@@ -1,66 +1,66 @@
-# 🎛️ Web Control Studio
+# Web Control Studio
 
 A web-based IoT device control system built for a production studio environment. It provides a real-time dashboard to control smart lights (WiZ), relay-based headlights (ESP32), and air conditioners — all from a single unified interface.
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Features](#-features)
-- [System Architecture](#-system-architecture)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [Setup & Installation](#-setup--installation)
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Setup & Installation](#setup--installation)
   - [Option A: Docker (Recommended for Production)](#option-a-docker-recommended-for-production)
   - [Option B: Manual Local Development](#option-b-manual-local-development)
-- [Environment Variables](#-environment-variables)
-- [Hardware Requirements](#-hardware-requirements)
-- [API & Integration](#-api--integration)
-- [Active Rooms / Menus](#-active-rooms--menus)
+- [Environment Variables](#environment-variables)
+- [Hardware Requirements](#hardware-requirements)
+- [API & Integration](#api--integration)
+- [Active Rooms / Menus](#active-rooms--menus)
 
 ---
 
-## ✨ Features
+## Features
 
-- 🎨 **WiZ Smart Light Control** — Set color (RGB), brightness, color temperature, or dynamic scenes across multiple lights simultaneously
-- 💡 **Relay Headlights Control** — Control relay channels on ESP32 individually or in bulk via drag-and-drop grid UI
-- ❄️ **AC Control** — Power and temperature control for air conditioning units
-- 📐 **Custom Grid Layout** — Drag-and-drop device arrangement with configurable grid sizes
-- 💾 **Saved Selections** — Save and quickly re-apply groups of selected devices
-- 🎬 **Animations** — Create and run custom color animation sequences on WiZ lights
-- 🗂️ **Presets** — Save and recall color/brightness configurations
-- ⏰ **Scheduler** — Automate device control by time and day with execution logs
-- 📡 **Real-time WebSocket** — Live status updates pushed from backend to all connected browsers instantly
-- 🔐 **JWT Authentication** — Role-based access control with HMAC-secured login
+- **WiZ Smart Light Control** — Set color (RGB), brightness, color temperature, or dynamic scenes across multiple lights simultaneously
+- **Relay Headlights Control** — Control relay channels on ESP32 individually or in bulk via drag-and-drop grid UI
+- **AC Control** — Power and temperature control for air conditioning units
+- **Custom Grid Layout** — Drag-and-drop device arrangement with configurable grid sizes
+- **Saved Selections** — Save and quickly re-apply groups of selected devices
+- **Animations** — Create and run custom color animation sequences on WiZ lights
+- **Presets** — Save and recall color/brightness configurations
+- **Scheduler** — Automate device control by time and day with execution logs
+- **Real-time WebSocket** — Live status updates pushed from backend to all connected browsers instantly
+- **JWT Authentication** — Role-based access control with HMAC-secured login
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│          Browser / React Frontend            │
-│    (Port 80 via Nginx in Docker,             │
-│     Port 3000 in local dev)                  │
-└──────────────┬──────────────────────────────┘
-               │  REST API  +  WebSocket (/ws/updates)
-               ▼
-┌─────────────────────────────────────────────┐
-│         FastAPI Backend (Python)             │
-│              Port 8000                       │
-│                                              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │PostgreSQL│  │APScheduler│  │WS Manager│   │
-│  │(Database)│  │(Scheduler)│  │(Broadcast)│  │
-│  └──────────┘  └──────────┘  └──────────┘   │
-└───┬────────────────┬────────────────┬────────┘
-    │ UDP :38899      │ HTTP /control  │ HTTP
-    ▼                 ▼               ▼
-┌────────┐      ┌──────────┐   ┌──────────┐
-│  WiZ   │      │  ESP32   │   │    AC    │
-│ Lamps  │      │  Relay   │   │  Units   │
-│(pywiz) │      │ (httpx)  │   │ (httpx)  │
-└────────┘      └──────────┘   └──────────┘
++---------------------------------------------+
+|          Browser / React Frontend            |
+|    (Port 80 via Nginx in Docker,             |
+|     Port 3000 in local dev)                  |
++--------------+------------------------------+
+               |  REST API  +  WebSocket (/ws/updates)
+               v
++---------------------------------------------+
+|         FastAPI Backend (Python)             |
+|              Port 8000                       |
+|                                              |
+|  +----------+  +----------+  +----------+   |
+|  |PostgreSQL|  |APScheduler|  |WS Manager|   |
+|  |(Database)|  |(Scheduler)|  |(Broadcast)|  |
+|  +----------+  +----------+  +----------+   |
++---+----------------+----------------+--------+
+    | UDP :38899      | HTTP /control  | HTTP
+    v                 v               v
++--------+      +----------+   +----------+
+|  WiZ   |      |  ESP32   |   |    AC    |
+| Lamps  |      |  Relay   |   |  Units   |
+|(pywiz) |      | (httpx)  |   | (httpx)  |
++--------+      +----------+   +----------+
 ```
 
 **Database Connection:**
@@ -69,7 +69,7 @@ A web-based IoT device control system built for a production studio environment.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -84,19 +84,19 @@ A web-based IoT device control system built for a production studio environment.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Web-Control-Studio/
 ├── docker-compose.yml          # Orchestrates frontend + backend containers
 ├── API_AND_SCHEMA_DOCUMENTATION.md
-│
+|
 ├── backend/
 │   ├── server.py               # FastAPI app entry point, JWT auth, WebSocket
 │   ├── ws_manager.py           # Global WebSocket broadcast manager
 │   ├── requirements.txt
 │   ├── Dockerfile
-│   ├── .env                    # ⚠️ Not committed — see Environment Variables
+│   ├── .env                    # Not committed — see Environment Variables
 │   ├── db/
 │   │   ├── models.py           # SQLAlchemy ORM models
 │   │   ├── crud.py             # Database CRUD functions
@@ -112,12 +112,12 @@ Web-Control-Studio/
 │       ├── relay_service.py    # ESP32 HTTP relay logic
 │       ├── ac_service.py       # AC HTTP control logic
 │       ├── command_center_service.py  # Animation thread
-│       └── scheduler_service.py       # APScheduler engine
-│
+│       └── scheduler_service.py      # APScheduler engine
+|
 └── frontend/
     ├── nginx.conf              # Nginx config (reverse proxy to backend)
     ├── Dockerfile
-    ├── .env                    # ⚠️ Not committed — see Environment Variables
+    ├── .env                    # Not committed — see Environment Variables
     └── src/
         ├── pages/              # One file per menu/room
         │   ├── Login.jsx
@@ -133,7 +133,7 @@ Web-Control-Studio/
 
 ---
 
-## 🚀 Setup & Installation
+## Setup & Installation
 
 ### Prerequisites
 
@@ -153,7 +153,7 @@ cd Web-Control-Studio
 
 **2. Create the backend environment file**
 
-Create `backend/.env` (see [Environment Variables](#-environment-variables) section):
+Create `backend/.env` (see [Environment Variables](#environment-variables) section):
 ```bash
 cp backend/.env.example backend/.env
 # Then edit backend/.env with your actual values
@@ -166,7 +166,7 @@ Create `frontend/.env`:
 REACT_APP_BACKEND_URL=
 REACT_APP_API_TOKEN=your_secret_key_same_as_backend_SECRET_KEY
 ```
-> ⚠️ Leave `REACT_APP_BACKEND_URL` **empty** when using Docker. Nginx handles the proxy automatically.
+> Leave `REACT_APP_BACKEND_URL` **empty** when using Docker. Nginx handles the proxy automatically.
 
 **4. Build and run**
 ```bash
@@ -219,7 +219,7 @@ npm start
 
 ---
 
-## 🔐 Environment Variables
+## Environment Variables
 
 ### `backend/.env`
 
@@ -262,11 +262,11 @@ REACT_APP_BACKEND_URL=
 REACT_APP_API_TOKEN=your_shared_hmac_secret
 ```
 
-> ⚠️ **Important:** `SECRET_KEY` (backend) and `REACT_APP_API_TOKEN` (frontend) **must be the same value**. This is the shared key for HMAC-secured login.
+> **Important:** `SECRET_KEY` (backend) and `REACT_APP_API_TOKEN` (frontend) **must be the same value**. This is the shared key for HMAC-secured login.
 
 ---
 
-## 🔌 Hardware Requirements
+## Hardware Requirements
 
 | Hardware | Protocol | Notes |
 |---|---|---|
@@ -278,7 +278,7 @@ All hardware must be reachable from the **backend server** on the local network.
 
 ---
 
-## 📡 API & Integration
+## API & Integration
 
 The backend exposes a fully documented REST API and WebSocket interface.
 
@@ -306,18 +306,18 @@ Connect to `ws://your-server:8000/ws/updates` (or `ws://your-server/ws` via Ngin
 
 ---
 
-## 🏠 Active Rooms / Menus
+## Active Rooms / Menus
 
 | Room ID | Menu Name | Hardware | Status |
 |---|---|---|---|
-| `showcase_room` | Showcase Room | WiZ Lamps | ✅ Active |
-| `studio_neon_room` | Studio: Neon Control | WiZ Lamps | ✅ Active |
-| `cc_room` | Command Center | WiZ Lamps | ✅ Active |
-| `headlights_room` | Studio: Main Headlights | ESP32 Relay | ✅ Active |
-| `ac_room` | Studio: AC Control | AC Units | 🔧 Hardware Pending |
+| `showcase_room` | Showcase Room | WiZ Lamps | Active |
+| `studio_neon_room` | Studio: Neon Control | WiZ Lamps | Active |
+| `cc_room` | Command Center | WiZ Lamps | Active |
+| `headlights_room` | Studio: Main Headlights | ESP32 Relay | Active |
+| `ac_room` | Studio: AC Control | AC Units | Hardware Pending |
 
 ---
 
-## 📄 License
+## License
 
 This project is proprietary and intended for internal studio use. Contact the repository owner for usage permissions.
