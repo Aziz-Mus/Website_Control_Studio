@@ -29,12 +29,12 @@ Web Control Studio adalah sistem kendali perangkat IoT berbasis web yang terdiri
 | `showcase_room` | Showcase Room | WiZ Lamps |
 | `studio_neon_room` | Studio: Neon Control | WiZ Lamps |
 | `cc_room` | Command Center | WiZ Lamps |
+| `headlights_room` | Studio: Main Headlights | Relay ESP32 |
 
 
 **Ruangan yang belum aktif secara hardware:**
 | Room ID | Nama Menu | Tipe Hardware |
 |---|---|---|
-| `headlights_room` | Studio: Main Headlights | Relay ESP32 |
 | `ac_room` | Studio: AC Control | AC Service |
 
 ---
@@ -174,6 +174,69 @@ Menyimpan riwayat maksimal 10 eksekusi terakhir per jadwal.
 ## 3. API Schema Lapis 1: Frontend ↔ Backend (REST API)
 
 **Base URL:** `http://localhost:8000`
+
+> **Catatan Autentikasi:** Semua endpoint (kecuali `/api/auth/login` dan `/api/openapi/token`) dilindungi oleh JWT Bearer Token. Sertakan header berikut di setiap request:
+> ```
+> Authorization: Bearer <access_token>
+> ```
+
+---
+
+### 3.0 Authentication API
+**Tag:** `Authentication`
+
+#### `POST /api/auth/login`
+Login untuk pengguna UI web. Memerlukan HMAC signature untuk keamanan tambahan.
+
+**Headers yang wajib dikirim:**
+```
+X-Timestamp: <unix_timestamp>
+X-Signature: <hmac_sha256_signature>
+```
+> Signature dibuat dari: `HMAC-SHA256(key=SECRET_KEY, message="{timestamp}.{json_body}")`
+
+**Request Body:**
+```json
+{ "username": "admin", "password": "your_password" }
+```
+**Response `200 OK`:**
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "bearer",
+  "username": "admin",
+  "role": "admin_all"
+}
+```
+**Response `403`:** `{ "detail": "HMAC signature mismatch. Access denied" }`  
+**Response `401`:** `{ "detail": "Invalid username or password" }`
+
+**Role yang tersedia:**
+| Role | Izin |
+|---|---|
+| `admin_all` | Full access (GET, POST, PUT, PATCH, DELETE) |
+| `read_only` | Hanya GET request |
+
+#### `POST /api/openapi/token`
+Generate long-lived API token (1 tahun) untuk integrasi pihak ketiga atau sistem AI. Menggunakan `form-data`, bukan JSON.
+
+**Request (form-data):**
+```
+username=admin_all
+password=your_password
+```
+**Response `200 OK`:**
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "bearer",
+  "expires_in_seconds": 3156000,
+  "expires_at_date": "2027-06-18 10:00:00",
+  "role": "admin_all",
+  "username": "admin_all"
+}
+```
+**Response `401`:** `{ "detail": "Wrong username or password!" }`
 
 ---
 
@@ -628,7 +691,7 @@ Backend berkomunikasi dengan lampu WiZ menggunakan library `pywizlight` melalui 
 
 Selain REST API, backend menyediakan koneksi WebSocket untuk pembaruan status secara real-time ke browser tanpa perlu polling.
 
-**WebSocket URL:** `ws://localhost:8000/ws/schedules`
+**WebSocket URL:** `ws://localhost:8000/ws/updates`
 
 #### Event 1: `schedule_status` — Pembaruan status jadwal
 
@@ -664,15 +727,14 @@ Status yang mungkin dikirim: `EXECUTE`, `ON`, `OFF`, `PARTIAL`, `FAILED`, `SKIPP
 
 #### Event 2: `device_status` — Pembaruan status perangkat individual
 
-Dikirim setelah eksekusi selesai, untuk mengupdate status tiap perangkat di UI secara real-time:
+Dikirim oleh endpoint `/wiz/lampu`, `/relay`, `/ac`, `/ac/all`, dan `/ac/temperature` setelah eksekusi sukses, untuk mengupdate status tiap perangkat di UI secara real-time:
 ```json
 {
   "type": "device_status",
-  "room_id": "headlights_room",
+  "room_id": "showcase_room",
   "devices": [
-    { "id": "hl_rl01", "kode": "1", "status": "on" },
-    { "id": "hl_rl02", "kode": "2", "status": "failed" },
-    { "id": "hl_rl03", "kode": "3", "status": "on" }
+    { "id": "sr_001", "status": "on" },
+    { "id": "sr_002", "status": "on" }
   ]
 }
 ```
@@ -684,5 +746,20 @@ Per-device status yang mungkin dikirim:
 | `"on"` | Device berhasil dinyalakan |
 | `"off"` | Device berhasil dimatikan |
 | `"failed"` | Device gagal dikendalikan |
+
+#### Event 3: `DEVICE_UPDATE` — Pembaruan bulk relay (Headlights)
+
+Khusus dikirim oleh endpoint `/relay/bulk` setelah eksekusi berhasil. Berbeda dengan `device_status`, event ini tidak memuat status per-device melainkan merelay payload mentah dari request:
+```json
+{
+  "type": "DEVICE_UPDATE",
+  "category": "relay_bulk",
+  "esp_ip": "10.1.40.88",
+  "relays": [
+    { "channel_code": "1", "power": "ON" },
+    { "channel_code": "2", "power": "OFF" }
+  ]
+}
+```
 
 > **Catatan:** Pada status `PARTIAL`, setiap device tetap menerima status individual — yang berhasil mendapat `"on"`/`"off"`, yang gagal mendapat `"failed"`. Status `PARTIAL` hanya berlaku di level schedule, bukan di level device.

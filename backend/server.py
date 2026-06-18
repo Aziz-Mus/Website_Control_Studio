@@ -84,8 +84,9 @@ app = FastAPI(
         * Showcase Room (showcase_room)
         * Studio: Neon Control (studio_neon_room)
         * Command Center (cc_room)
+        * Studio : Main Headlights (headligths_room)
 
-        Untuk Studio : AC Control (ac_room) dan Studio : Main Headlights (headligths_room) belum berfungsi secara hardware
+        Untuk Studio : AC Control (ac_room) belum berfungsi secara hardware
         """,
     version="3.0.0"
 )
